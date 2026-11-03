@@ -1,0 +1,53 @@
+## Assembly instruction specification
+
+{{INSTRUCTION_SPEC}}
+
+## Step plan
+
+{{STEP_PLAN}}
+
+## Expected process
+
+The steps this run is expected to run, in order. This is a map, not a gate:
+nothing rejects a step for being absent from it. Compare each incoming
+begin_step's step_id against it -- one that is not here is unplanned, and must
+be named as unplanned in whatever you record. contract_clause_groups records
+where in the process each group of clauses is judged; effects fall due only at
+the steps that carry them.
+
+{{STEPS}}
+
+## Objects in scene
+
+{{OBJECT_IDS}}
+
+## Run notes
+
+{{RUN_NOTES}}
+
+---
+
+Begin your control loop. You have the whole process above before the first
+step opens -- read it, work out what must be watched and for how long, and put
+in place what is already in force. Contracts are static per-object reference
+data: fetch each once and keep it. The event stream is what tells you where
+the run has got to. Monitor to completion.
+
+Evaluate what is due at each step's end, but do not record a verdict for a
+step that checked out clean -- hold its clause results, tagged with its
+step_id, in working memory. Record a verdict only on a finding: a violation
+you caught as it happened and adjudicated, or an end_step check that failed a
+clause nothing had caught, scoped to the step it happened in and recorded the
+moment you have it.
+
+At the end of the run, call record_run_verdict exactly once -- always, whether
+or not you recorded findings. Findings are the timeline; that call is the
+end-state assessment, and its value reflects where the parts actually are when
+the run stops, measured by you. A part you flagged mid-run that the executor
+then corrected ends the run conformant: that is a recovery, and the record has
+to be able to show it.
+
+The process above is what is expected, not a limit on what you will see. A
+step whose step_id is not on it is unplanned: it is governed by every
+requirement already in force, judged like any other step, and you must name it
+as unplanned in whatever you record.

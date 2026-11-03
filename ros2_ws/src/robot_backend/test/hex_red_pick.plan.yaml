@@ -1,0 +1,82 @@
+# Plan for plan_assembly_step.py -- hex_red pick, reorient, place.
+# Structure mirrors inverted_u_brown_pick.plan.yaml (the proven one); see
+# plan_assembly_step.py's docstring for the format and frame: options.
+#
+
+
+object_id: hex_red
+gripper_width_m: 0.03       
+
+steps:
+  - step_id: sync_scene
+    action: sync_scene
+    object_ids: [u_green, base2, hex_blue, hex_red, inverted_u_brown]
+
+  - step_id: set_permitted_contacts
+    action: set_permitted_contacts
+
+
+  - step_id: safe_start
+    action: move_named_safe_pose
+    name: ready
+
+  - step_id: pick_hex_red
+    action: approach_and_preposition
+
+    approach_distance_m: -0.1
+    grasp_center_offset:
+      position: {x: 0.0, y: 0.06, z: 0.0}
+      orientation: {x: 0.683013, y: 0.183013, z: -0.183013, w: 0.683013}
+    stop_at_pregrasp: false
+
+  - step_id: grasp_hex_red
+    action: grasp
+
+  - step_id: lift_hex_red
+    action: move_grasp_center_to_pose
+    frame: delta_from_last
+    delta: {x: 0.0, y: 0.0, z: 0.3}
+
+  - step_id: clear_octomap_after_grasp
+    action: clear_octomap
+
+
+  - step_id: prepare for insertion
+    action: move_grasp_center_to_pose
+    frame: target_object
+  
+    target_id: hex_red_hole
+    target_offset:
+      position: {x: 0.0, y: 0.1, z: 0.0}
+      orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+    grasp_width_m: 0.03
+    grasp_center_offset:
+      position: {x: 0.0, y: 0.06, z: 0.0}
+      orientation: {x: 0.5, y: 0.5, z: -0.5, w: 0.5}
+
+
+
+  - step_id: clear_octomap_before_insertion
+    action: clear_octomap
+  - step_id: set_permitted_contacts_after_grasp
+    action: set_permitted_contacts
+
+  - step_id: placement
+    action: move_grasp_center_to_pose
+    frame: target_object
+    target_id: hex_red_hole
+    grasp_center_offset:
+      position: {x: 0.0, y: 0.06, z: 0.0}
+      orientation: {x: 0.5, y: 0.5, z: -0.5, w: 0.5}
+    motion:
+      max_velocity_scaling_factor: 0.2
+      max_acceleration_scaling_factor: 0.2
+
+
+
+  - step_id: release_hex_red
+    action: release
+
+  - step_id: retreat_after_placement
+    action: retreat
+    distance_m: -0.10

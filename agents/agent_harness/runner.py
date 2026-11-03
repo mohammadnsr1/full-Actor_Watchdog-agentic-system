@@ -1,0 +1,606 @@
+"""The runner: identical for both agents, no agent-specific logic.
+
+It connects to the agent's configured MCP servers, discovers tools, loops the
+provider against those tools, and records everything. It does not know about
+monitors, verdicts, skills, or steps -- it is a conduit and a recorder only.
+
+The one piece of cross-cutting behavior is the wait_for_event timeout rule,
+which exists because it is how a WatchDog run terminates once WatchDog has
+run out of things to watch for. The executor has no such tool and simply
+never takes that path (see agent_harness.mcp_client.WAIT_FOR_EVENT_TOOL).
+
+Termination-reason discipline (see the B1 postmortem this file was rewritten
+against): every path that can end the run either (a) records the response/
+result that was actually received before checking anything else, or (b) is
+driven by an explicit exception handler that classifies the failure and
+carries the exception type/message into run_end. There is no default value
+that a fallthrough can leave in place -- termination_reason starts at None and
+the loop condition itself (`while termination_reason is None`) is what stops
+it from ever masquerading as something it isn't.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import traceback
+from dataclasses import dataclass
+from typing import Any
+
+from agent_harness.config import AgentConfig
+from agent_harness.mcp_client import MCPClientPool, WAIT_FOR_EVENT_TOOL
+from agent_harness.providers import ProviderResponse, get_provider
+from agent_harness.timebase import wall_ns
+from agent_harness.transcript import TranscriptWriter, _summarize, hash_file
+
+NUDGE_MESSAGE = (
+    "You have not taken any action. If your work is complete, say so plainly. "
+    "Otherwise, continue."
+)
+
+TERMINATION_REASONS = {
+    "run_complete",
+    "no_execution_observed",
+    "max_turns_exhausted",
+    "agent_idle",
+    "provider_error",
+    "mcp_error",
+    "user_abort",
+}
+
+
+@dataclass
+class RunResult:
+    termination_reason: str
+    turn_count: int
+    transcript_path: str
+    verdict_count: int | None = None
+
+
+_TRACEBACK_FRAME_LIMIT = 20
+_CONTEXT_ELISION_NOTE = (
+    "The full payload was removed from this conversation to stay within "
+    "the context window. Call this tool again with the same arguments to "
+    "retrieve it if you still need it."
+)
+
+
+def _estimate_message_tokens(messages: list[dict]) -> int:
+    """Conservative provider-neutral estimate for punctuation-dense JSON."""
+    chars = len(json.dumps(messages, default=str, ensure_ascii=False))
+    return math.ceil(chars / 3.5)
+
+
+def _serialized_bytes(value: Any) -> int:
+    return len(json.dumps(value, default=str, ensure_ascii=False).encode("utf-8"))
+
+
+def _elide_tool_results(
+    messages: list[dict],
+    tool_result_meta: dict[int, tuple[int, dict]],
+    *,
+    current_turn: int,
+    keep_recent_turns: int,
+    context_budget_tokens: int,
+    transcript: TranscriptWriter,
+    aggressive: bool = False,
+) -> int:
+    """Elide eligible tool results oldest-first, mutating no other message."""
+    elision_count = 0
+    for index, message in enumerate(messages):
+        if not aggressive and _estimate_message_tokens(messages) <= context_budget_tokens:
+            break
+        meta = tool_result_meta.get(index)
+        if meta is None or message.get("role") != "tool_result":
+            continue
+        result_turn, arguments = meta
+        if result_turn >= current_turn - keep_recent_turns:
+            continue
+        content = message.get("content")
+        if isinstance(content, dict) and content.get("elided") is True:
+            continue
+
+        before = _estimate_message_tokens(messages)
+        stub = {
+            "elided": True,
+            "reason": "context_budget",
+            "tool": message.get("name", "unknown"),
+            "arguments": arguments,
+            "summary": _summarize(content),
+            "note": _CONTEXT_ELISION_NOTE,
+        }
+        message["content"] = stub
+        after = _estimate_message_tokens(messages)
+        transcript.context_elision(
+            turn=current_turn,
+            tool=str(message.get("name", "unknown")),
+            elided_bytes=_serialized_bytes(content),
+            estimated_tokens_before=before,
+            estimated_tokens_after=after,
+        )
+        elision_count += 1
+    return elision_count
+
+
+def _exception_nodes(error: BaseException):
+    """Yield an exception plus nested groups and cause/context chains."""
+    seen: set[int] = set()
+    pending = [error]
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        yield current
+        pending.extend(getattr(current, "exceptions", None) or [])
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        elif current.__context__ is not None:
+            pending.append(current.__context__)
+
+
+def _is_context_length_error(error: BaseException) -> bool:
+    """Detect cross-provider context overflows from HTTP status and text."""
+    nodes = list(_exception_nodes(error))
+    status_codes = {
+        int(code)
+        for node in nodes
+        if (code := getattr(node, "status_code", None)) is not None
+        and str(code).isdigit()
+    }
+    text = " ".join(str(node) for node in nodes).lower()
+    context_text = any(
+        phrase in text
+        for phrase in (
+            "context window",
+            "context length",
+            "maximum context",
+            "too many tokens",
+            "input exceeds",
+            "prompt is too long",
+        )
+    )
+    return any(400 <= code < 500 for code in status_codes) and context_text
+
+
+def _exception_detail(e: BaseException) -> dict:
+    """Recursively describe an exception, including any nested exception
+    group members and __cause__ chain, each with a truncated traceback.
+
+    A KeyboardInterrupt raised inside an anyio/asyncio TaskGroup surfaces
+    here as an ExceptionGroup whose sub-exceptions carry the real cause --
+    without recursing into `exceptions`, an operator Ctrl-C is
+    indistinguishable on the record from a genuine transport failure. See
+    _contains_keyboard_interrupt, which walks the same structure to decide
+    termination_reason.
+    """
+    detail: dict[str, Any] = {
+        "exception_type": type(e).__name__,
+        "exception_message": str(e),
+        "traceback": traceback.format_exception(
+            type(e), e, e.__traceback__, limit=_TRACEBACK_FRAME_LIMIT
+        ),
+    }
+    subs = getattr(e, "exceptions", None)
+    if subs:
+        detail["sub_exceptions"] = [_exception_detail(sub) for sub in subs]
+    if e.__cause__ is not None:
+        detail["cause"] = _exception_detail(e.__cause__)
+    return detail
+
+
+def _contains_keyboard_interrupt(e: BaseException) -> bool:
+    """True if e, or anything nested inside it (exception group members or
+    the __cause__ chain), is a KeyboardInterrupt.
+
+    Needed because an operator Ctrl-C during an `async with` block (e.g.
+    MCPClientPool's TaskGroup) does not arrive here as a bare
+    KeyboardInterrupt -- it is wrapped in an ExceptionGroup, whose top-level
+    type is just "ExceptionGroup" with no indication of what is inside
+    unless this recurses.
+    """
+    if isinstance(e, KeyboardInterrupt):
+        return True
+    for sub in getattr(e, "exceptions", None) or []:
+        if _contains_keyboard_interrupt(sub):
+            return True
+    if e.__cause__ is not None and _contains_keyboard_interrupt(e.__cause__):
+        return True
+    return False
+
+
+def _drained_run_ended(result: Any) -> str | None:
+    """The status on a run_ended event in a wait_for_event drain, or None.
+
+    Same two places _drained_begin_step looks -- the woken-on event and
+    anything batched behind it in the same drain -- for the same reason: a
+    run_ended can arrive bundled behind another event and would otherwise be
+    missed. Returns the status string so the caller can tell a clean finish
+    from an abort without re-parsing the drain.
+    """
+    if not isinstance(result, dict):
+        return None
+    if result.get("wake") == "run_ended":
+        payload = result.get("payload") or {}
+        return payload.get("status") if isinstance(payload, dict) else None
+    for ev in result.get("additional_events", None) or []:
+        if isinstance(ev, dict) and ev.get("event_type") == "run_ended":
+            payload = ev.get("payload") or {}
+            if isinstance(payload, dict):
+                return payload.get("status")
+    return None
+
+
+def _emit_fallback_run_ended(status: str, reason: str) -> bool:
+    """Emit a run_ended the executor agent never got to emit itself.
+
+    Covers the harness-level stops -- max_turns_exhausted, agent_idle,
+    provider_error -- where the run ends without the agent choosing to stop,
+    so it never called end_run. Without this the WatchDog would have to infer
+    those endings from silence, which is the behaviour this whole mechanism
+    replaces. A genuine hard crash still reaches neither path; that is what
+    the WatchDog's no-event timeout is for.
+
+    Best-effort: if the event bus is not reachable from this process there is
+    nothing useful to do about it, and failing to emit must never turn an
+    already-ending run into a traceback.
+    """
+    try:
+        from robot_backend.events.bus import get_bus
+        from robot_backend.events.schema import RunEndedPayload, make_event
+
+        get_bus().publish(
+            make_event(
+                "run_ended",
+                RunEndedPayload(
+                    status=status,  # type: ignore[arg-type]
+                    reason=reason,
+                    detail={"emitted_by": "harness_fallback"},
+                ),
+            )
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _drained_begin_step(result: Any) -> bool:
+    """True if a wait_for_event result's drain contains a begin_step event.
+
+    Checks both the woken-on event (`wake`) and any events batched into the
+    same drain (`additional_events`) -- a begin_step can arrive bundled
+    behind another event in the same wake, and would otherwise never be
+    counted (see B1: a WatchDog run that never observed a begin_step must
+    not be labeled run_complete).
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("wake") == "begin_step":
+        return True
+    for ev in result.get("additional_events", None) or []:
+        if isinstance(ev, dict) and ev.get("event_type") == "begin_step":
+            return True
+    return False
+
+
+async def run(config: AgentConfig, task_text: str, system_prompt: str) -> RunResult:
+    task_name = config.task_template.stem
+    transcript = TranscriptWriter(config.transcript_dir, config.agent, task_name)
+    transcript.run_start(
+        agent=config.agent,
+        provider=config.provider,
+        model=config.model,
+        task_name=task_name,
+        system_prompt_sha256=hash_file(config.system_prompt),
+    )
+
+    provider = get_provider(
+        config.provider,
+        config.model,
+        config.api_key,
+        config.max_tokens,
+        reasoning_effort=config.reasoning_effort,
+        thinking_budget_tokens=config.thinking_budget_tokens,
+    )
+
+    # B1: bind the loop bound directly from config, once, and assert it --
+    # so a future refactor that introduces a second local copy (the exact
+    # shape of the bug this replaced: a stale default masquerading as the
+    # real termination reason) cannot silently desync the loop from what the
+    # config actually says.
+    max_turns = config.loop.max_turns
+    assert max_turns == config.loop.max_turns and max_turns > 0, (
+        f"runner must use config.loop.max_turns as the loop bound; got {max_turns!r}"
+    )
+
+    # No default. If nothing below ever sets this, that is a bug in this
+    # function, not a completed-to-cap run -- see the final assert.
+    termination_reason: str | None = None
+    error_detail: dict | None = None
+    turn_count = 0
+    verdict_count = 0
+
+    try:
+        async with MCPClientPool(config.mcp_servers, config.mcp_client_timeout_sec) as pool:
+            discovered = await pool.list_tools()
+            tool_dicts = [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.input_schema,
+                }
+                for t in discovered
+            ]
+            transcript.tools_discovered(tool_dicts)
+
+            messages: list[dict] = [{"role": "user", "content": task_text}]
+            # message index -> (turn produced, original tool arguments).
+            # Kept outside the provider-neutral message schema so providers
+            # never see runner bookkeeping and the arguments in an elision
+            # stub are exactly those from the original call.
+            tool_result_meta: dict[int, tuple[int, dict]] = {}
+            consecutive_no_tool_calls = 0
+            consecutive_timeouts = 0
+            # B1: whether any wait_for_event drain has ever contained a
+            # begin_step -- i.e. whether the executor was ever observed
+            # doing anything at all. Meaningless for the executor config
+            # (never calls wait_for_event) but required to distinguish a
+            # WatchDog run that genuinely monitored a run from one that sat
+            # alone and timed itself out; see _drained_begin_step and the
+            # run_complete/no_execution_observed split below.
+            begin_step_observed = False
+            # Executor side: whether the agent called end_run itself, so the
+            # finally block knows not to emit a duplicate on its behalf.
+            # WatchDog side: the status off an observed run_ended, which is
+            # now what justifies calling an ending "run_complete" instead of
+            # inferring it from two silent timeouts.
+            run_ended_emitted = False
+            run_ended_status: str | None = None
+            # Index into `messages` of the first entry not yet logged to the
+            # transcript. The provider always receives the full, growing
+            # `messages` list (see providers.complete below) -- this index
+            # only narrows what record_llm_request writes to disk, so the
+            # same message isn't re-recorded inside every later turn.
+            logged_upto = 0
+
+            while termination_reason is None:
+                if turn_count >= max_turns:
+                    termination_reason = "max_turns_exhausted"
+                    break
+                turn_count += 1
+
+                _elide_tool_results(
+                    messages,
+                    tool_result_meta,
+                    current_turn=turn_count,
+                    keep_recent_turns=config.context_keep_recent_turns,
+                    context_budget_tokens=config.context_budget_tokens,
+                    transcript=transcript,
+                )
+
+                transcript.llm_request(
+                    turn_count, messages[logged_upto:], len(tool_dicts)
+                )
+                logged_upto = len(messages)
+                try:
+                    response: ProviderResponse = provider.complete(
+                        system_prompt, messages, tool_dicts
+                    )
+                except Exception as e:
+                    if _is_context_length_error(e):
+                        before = _estimate_message_tokens(messages)
+                        elision_count = _elide_tool_results(
+                            messages,
+                            tool_result_meta,
+                            current_turn=turn_count,
+                            keep_recent_turns=config.context_keep_recent_turns,
+                            context_budget_tokens=config.context_budget_tokens,
+                            transcript=transcript,
+                            aggressive=True,
+                        )
+                        after = _estimate_message_tokens(messages)
+                        transcript.context_overflow_recovery(
+                            turn=turn_count,
+                            estimated_tokens_before=before,
+                            estimated_tokens_after=after,
+                            elision_count=elision_count,
+                        )
+                        try:
+                            response = provider.complete(
+                                system_prompt, messages, tool_dicts
+                            )
+                        except Exception as retry_error:
+                            termination_reason = "provider_error"
+                            error_detail = _exception_detail(retry_error)
+                            break
+                    else:
+                        # Any non-context provider-call failure -- rate limit
+                        # exhausted after retries, auth/schema error, an
+                        # invalid model name, a timeout, or a provider bug --
+                        # ends the run here, labeled for what it is.
+                        termination_reason = "provider_error"
+                        error_detail = _exception_detail(e)
+                        break
+
+                # B1: record the response immediately on return, before any
+                # termination check. A response that arrived is evidence
+                # regardless of what happens next.
+                transcript.llm_response(
+                    turn_count,
+                    response.text,
+                    response.reasoning,
+                    response.tool_calls,
+                    response.stop_reason,
+                    response.usage,
+                )
+
+                if not response.tool_calls:
+                    consecutive_no_tool_calls += 1
+                    # provider_native is opaque here -- only the originating
+                    # provider's own *_to_*_messages/input reads it, to
+                    # reconstruct this turn (with its reasoning) on a later
+                    # call. See providers.py's module docstring.
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": response.text,
+                            "provider_native": response.provider_native,
+                        }
+                    )
+                    if consecutive_no_tool_calls >= 2:
+                        termination_reason = "agent_idle"
+                        break
+                    messages.append({"role": "user", "content": NUDGE_MESSAGE})
+                    continue
+
+                consecutive_no_tool_calls = 0
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response.text,
+                        "tool_calls": response.tool_calls,
+                        "provider_native": response.provider_native,
+                    }
+                )
+
+                for tc in response.tool_calls:
+                    t0 = wall_ns()
+                    transcript.tool_call(turn_count, tc.name, tc.arguments)
+                    # Deliberately no try/except here: any exception (a
+                    # transport failure, or anything else) propagates to the
+                    # outer handler below, which classifies it as mcp_error.
+                    # tool_call has already been recorded, so the attempt is
+                    # on the record even though its result never arrived.
+                    result = await pool.call_tool(tc.name, tc.arguments)
+                    t1 = wall_ns()
+                    transcript.tool_result(turn_count, tc.name, result, t1 - t0)
+                    messages.append(
+                        {
+                            "role": "tool_result",
+                            "tool_call_id": tc.id,
+                            "name": tc.name,
+                            "content": result,
+                        }
+                    )
+                    tool_result_meta[len(messages) - 1] = (
+                        turn_count,
+                        tc.arguments,
+                    )
+
+                    # Both count: a clean run records no per-step verdict and
+                    # exactly one run-scoped rollup, and a verdict_count of 0
+                    # there would read as "the watchdog recorded nothing".
+                    if tc.name in ("record_verdict", "record_run_verdict"):
+                        verdict_count += 1
+
+                    # The executor declared its own ending; the finally block
+                    # must not emit a second one on its behalf.
+                    if tc.name == "end_run":
+                        run_ended_emitted = True
+
+                    if tc.name == WAIT_FOR_EVENT_TOOL:
+                        if _drained_begin_step(result):
+                            begin_step_observed = True
+                        drained_status = _drained_run_ended(result)
+                        if drained_status is not None:
+                            run_ended_status = drained_status
+                        wake = result.get("wake") if isinstance(result, dict) else None
+                        # B2: increment only on a genuine wait_for_event
+                        # timeout. Reset on anything else -- a wake on a real
+                        # event, or any other tool call in this turn's list
+                        # (e.g. get_execution_state between two waits). A
+                        # turn that timed out, checked state, and resumed
+                        # waiting is diagnosing correctly and must not be
+                        # pushed toward termination; only two genuinely
+                        # back-to-back wait_for_event timeouts should be.
+                        if wake == "timeout":
+                            consecutive_timeouts += 1
+                        else:
+                            consecutive_timeouts = 0
+                    else:
+                        consecutive_timeouts = 0
+
+                if (
+                    config.loop.stop_after_consecutive_timeouts is not None
+                    and consecutive_timeouts
+                    >= config.loop.stop_after_consecutive_timeouts
+                ):
+                    # B1: a run that reached this cap without ever observing
+                    # a begin_step monitored nothing -- an executor that
+                    # never started is indistinguishable, in its
+                    # consequences, from one that ran cleanly with no
+                    # violations, unless this is labeled distinctly.
+                    #
+                    # An observed run_ended outranks both: the executor SAID
+                    # it stopped, so the ending is a fact rather than the
+                    # inference-from-silence this used to be. Reaching this
+                    # cap anyway means the agent kept waiting after the
+                    # terminal event, which its prompt tells it not to do.
+                    # Note the loop is deliberately NOT broken the moment
+                    # run_ended is drained: the WatchDog still needs a turn
+                    # to record its rollup, and cutting it off there would
+                    # lose the very verdict this mechanism exists to produce.
+                    if run_ended_status is not None:
+                        termination_reason = "run_complete"
+                    else:
+                        termination_reason = (
+                            "run_complete" if begin_step_observed else "no_execution_observed"
+                        )
+                    break
+    except (KeyboardInterrupt, BaseExceptionGroup) as e:
+        # Two distinct ways an operator Ctrl-C can reach here, neither
+        # caught by `except Exception` below: a bare KeyboardInterrupt
+        # raised outside the `async with` block, or a BaseExceptionGroup --
+        # what anyio's TaskGroup raises when a KeyboardInterrupt is one of
+        # its sub-exceptions. BaseExceptionGroup is a BaseException, not an
+        # Exception (only ExceptionGroup, its all-Exception-subclass sibling,
+        # is), so it silently skips `except Exception` entirely; without this
+        # clause it would escape this function altogether and the finally
+        # block's assert would fire instead of a clean user_abort.
+        termination_reason = "user_abort" if _contains_keyboard_interrupt(e) else "mcp_error"
+        error_detail = _exception_detail(e)
+    except Exception as e:
+        # Anything that escaped the loop above -- MCP pool connect/list_tools
+        # failure, a tool-call transport failure, or any other unhandled
+        # exception on the MCP/harness side (provider failures are already
+        # caught and labeled above and never reach here). Same treatment as
+        # B1 requires for provider failures: classify, don't default.
+        #
+        # An operator Ctrl-C during an `async with` block (MCPClientPool's
+        # TaskGroup) surfaces here as an ExceptionGroup, not a bare
+        # KeyboardInterrupt -- _contains_keyboard_interrupt recurses into it
+        # so this is still labeled user_abort, not a mislabeled mcp_error.
+        if _contains_keyboard_interrupt(e):
+            termination_reason = "user_abort"
+        else:
+            termination_reason = "mcp_error"
+        error_detail = _exception_detail(e)
+    finally:
+        # By construction termination_reason is always set by this point:
+        # either a break above set it, or the except clause just did.
+        assert termination_reason is not None, (
+            "runner exited without setting a termination reason -- this is a "
+            "bug in runner.py, not a completed run"
+        )
+        # Executor-side backstop. The agent is instructed to call end_run on
+        # every ending it chooses, but max_turns_exhausted / agent_idle /
+        # provider_error are endings it does NOT choose -- the loop stops
+        # around it and it never gets the turn. Emit on its behalf so the
+        # WatchDog still gets a terminal event rather than falling back to
+        # inferring the ending from silence. Always "aborted": the executor
+        # did not reach its own completion path, whatever else happened.
+        if config.agent == "executor" and not run_ended_emitted:
+            _emit_fallback_run_ended(
+                "aborted", f"harness terminated the run: {termination_reason}"
+            )
+        transcript.run_end(
+            termination_reason, turn_count, verdict_count=verdict_count, error=error_detail
+        )
+        transcript.close()
+
+    return RunResult(
+        termination_reason=termination_reason,
+        turn_count=turn_count,
+        transcript_path=str(transcript.path),
+        verdict_count=verdict_count,
+    )

@@ -1,0 +1,608 @@
+"""WatchDog monitor engine."""
+
+from __future__ import annotations
+
+import collections
+import math
+import threading
+from typing import Any
+
+from robot_backend.events.schema import (
+    MonitorArmedPayload,
+    MonitorDisarmedPayload,
+    MonitorFirePayload,
+    make_event,
+)
+
+from .authored import AuthoredBudgetExceeded, AuthoredReturnError
+from .monitors import MonitorPrimitive
+from .timebase import wall_ns
+
+# Authored-lane budgets. One evaluation may take at most this much wall time
+# before it counts as a strike; a monitor that accumulates the strike limit is
+# disarmed with reason "authored_timeout". A line-budget overrun
+# (AuthoredBudgetExceeded) counts as a strike the same way. Library monitors
+# are untouched by both: they run on the recorder callbacks, not this lane.
+_AUTHORED_WALL_BUDGET_SEC = 0.020
+_AUTHORED_STRIKE_LIMIT = 5
+# The ARRAY lane's wall budget. Far looser than the scalar lane's: numpy C
+# work over a full frame is invisible to the line tracer, so the wall clock is
+# the only real bound there, and 150 ms at <= 2 Hz keeps the lane responsive
+# without forbidding whole-frame operations.
+ARRAY_WALL_BUDGET_MS = 150.0
+# Ceiling on the failure detail carried on an authored monitor_disarmed
+# event: enough for an exception type plus message, small enough that a
+# pathological repr cannot bloat the event log.
+_AUTHORED_DETAIL_MAX_CHARS = 300
+
+
+def _failure_detail(exc_or_text: Any) -> str:
+    """Short, truncated description of an authored failure for the record."""
+    if isinstance(exc_or_text, BaseException):
+        text = f"{type(exc_or_text).__name__}: {exc_or_text}"
+    else:
+        text = str(exc_or_text)
+    if len(text) > _AUTHORED_DETAIL_MAX_CHARS:
+        return text[: _AUTHORED_DETAIL_MAX_CHARS - 3] + "..."
+    return text
+
+
+def _finite_or_none(value: Any) -> float | None:
+    """Float for JSON, or None for a non-finite/absent threshold.
+
+    The base MonitorPrimitive initialises threshold to NaN, and NaN is not
+    representable in strict JSON -- it would reach the scorer as the literal
+    NaN token or as a parse error depending on the reader. None says "this
+    family has no scalar threshold" unambiguously.
+    """
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if math.isfinite(out) else None
+
+
+_PROVENANCE_FIELDS = (
+    "threshold_source",
+    "provenance_object_source",
+    "threshold_verified",
+    "threshold_registry_field",
+    "threshold_registry_value",
+)
+
+
+def _fire_provenance(monitor: Any) -> dict[str, Any]:
+    """The arm-time provenance fields, for restating on the fire payload.
+
+    Only the four provenance keys: provenance also carries the arm-time
+    object_id, which must not overwrite the fire's own object_id (for
+    effort_event the two are resolved at different moments and can differ).
+    """
+    provenance = getattr(monitor, "provenance", None) or {}
+    return {k: provenance[k] for k in _PROVENANCE_FIELDS if k in provenance}
+
+
+def _authored_fields(monitor: Any) -> dict[str, Any]:
+    """The authored-only payload fields, or {} for a library monitor.
+
+    Empty for library monitors so their payloads are built from exactly the
+    kwargs they were built from before, and the schema defaults (origin
+    "library", null everywhere else) fill the new fields.
+    """
+    if getattr(monitor, "origin", "library") != "authored":
+        return {}
+    return {
+        "origin": "authored",
+        "code_sha256": getattr(monitor, "code_sha256", None),
+        "description": getattr(monitor, "description", None),
+        "channels_read": list(getattr(monitor, "channels_read", None) or []),
+        "purpose": getattr(monitor, "purpose", "clause"),
+        "threshold_rationale": getattr(monitor, "threshold_rationale", None),
+    }
+
+
+class MonitorEngine:
+    """Evaluate armed monitor primitives from recorder callbacks."""
+
+    def __init__(
+        self,
+        event_bus: Any,
+        halt_client: Any | None = None,
+        wake_event: threading.Event | None = None,
+        logger: Any | None = None,
+    ) -> None:
+        self.event_bus = event_bus
+        self.halt_client = halt_client
+        self.wake_event = wake_event or threading.Event()
+        self.logger = logger
+        self.lock = threading.Lock()
+        self.monitors: dict[str, MonitorPrimitive] = {}
+        self._fire_queue: collections.deque[dict[str, Any]] = collections.deque(maxlen=1000)
+        # The part the gripper is holding, tracked from the executor's event
+        # stream. The watchdog is a separate process and has no view of
+        # MoveIt's attach state, so this is the only way to know. The span
+        # opens at grasp_skill's skill_start (so a clamp-effort fire DURING
+        # the close still attributes to the part being closed on), is
+        # confirmed at skill_end ok=True, and closes at release_skill's
+        # skill_start or a failed grasp.
+        self._held_object_id: str | None = None
+        self._held_confirmed: bool = False
+        # --- authored lane ------------------------------------------------
+        # Authored monitors run on their own daemon thread, never on the
+        # recorder callbacks that evaluate the library feeds. The recorder
+        # callbacks only set _authored_wake; a slow or hanging authored
+        # evaluation therefore cannot delay a library monitor or halt latency.
+        self._recorder: Any | None = None
+        self._authored_wake = threading.Event()
+        self._authored_stop = threading.Event()
+        self._authored_thread: threading.Thread | None = None
+        # The ARRAY lane: camera/numpy monitors (feed == "authored_array"),
+        # each with its own period, on a third thread -- so whole-frame numpy
+        # work can never delay the TF/joint callbacks OR the scalar authored
+        # lane. It self-schedules on monitor periods; no wake event needed.
+        self._array_stop = threading.Event()
+        self._array_thread: threading.Thread | None = None
+
+    def attach_recorder(self, recorder: Any) -> None:
+        """Give the engine the recorder authored contexts observe through."""
+        self._recorder = recorder
+
+    def start_authored_lane(self) -> None:
+        """Start the authored evaluation threads (scalar + array). Idempotent."""
+        if self._authored_thread is None or not self._authored_thread.is_alive():
+            self._authored_stop.clear()
+            self._authored_thread = threading.Thread(
+                target=self._authored_worker, name="authored_lane", daemon=True
+            )
+            self._authored_thread.start()
+        if self._array_thread is None or not self._array_thread.is_alive():
+            self._array_stop.clear()
+            self._array_thread = threading.Thread(
+                target=self._array_worker, name="authored_array_lane", daemon=True
+            )
+            self._array_thread.start()
+
+    def stop_authored_lane(self) -> None:
+        """Stop the authored evaluation threads and join them."""
+        self._authored_stop.set()
+        self._authored_wake.set()
+        self._array_stop.set()
+        for thread in (self._authored_thread, self._array_thread):
+            if thread is not None:
+                try:
+                    thread.join(timeout=2.0)
+                except Exception:
+                    pass
+        self._authored_thread = None
+        self._array_thread = None
+
+    def _authored_worker(self) -> None:
+        while not self._authored_stop.is_set():
+            woke = self._authored_wake.wait(0.5)
+            if self._authored_stop.is_set():
+                return
+            if not woke:
+                continue
+            self._authored_wake.clear()
+            with self.lock:
+                monitors = [m for m in self.monitors.values() if m.feed == "authored"]
+            # Each authored monitor is evaluated at most once per wake, and
+            # only ever on this thread (plus once at arm time on the tool
+            # thread, before it entered the dict), so it needs no locking of
+            # its own.
+            for monitor in monitors:
+                try:
+                    value = monitor.evaluate(None)
+                except AuthoredBudgetExceeded as exc:
+                    # A budget overrun is a strike and never a fire.
+                    self._authored_strike(monitor, _failure_detail(exc))
+                    continue
+                except AuthoredReturnError as exc:
+                    self._log_warn(
+                        f"authored monitor {monitor.monitor_id} bad return: {exc}"
+                    )
+                    self.disarm(
+                        monitor.monitor_id, "authored_bad_return",
+                        _failure_detail(exc),
+                    )
+                    continue
+                except Exception as exc:
+                    self._log_warn(
+                        f"authored monitor {monitor.monitor_id} raised: {exc}"
+                    )
+                    self.disarm(
+                        monitor.monitor_id, "authored_error", _failure_detail(exc)
+                    )
+                    continue
+                if getattr(monitor, "last_wall_time_sec", 0.0) > _AUTHORED_WALL_BUDGET_SEC:
+                    overrun = self._authored_strike(monitor, _failure_detail(
+                        f"wall time {monitor.last_wall_time_sec:.4f}s exceeded "
+                        f"the {_AUTHORED_WALL_BUDGET_SEC}s per-call budget"
+                    ))
+                    if overrun:
+                        continue
+                if value is not None:
+                    self._handle_fire(monitor, float(value))
+
+    def _authored_strike(self, monitor: Any, detail: str | None = None) -> bool:
+        """Count one budget strike; True when it disarmed the monitor."""
+        monitor.strikes = getattr(monitor, "strikes", 0) + 1
+        if monitor.strikes >= _AUTHORED_STRIKE_LIMIT:
+            self._log_warn(
+                f"authored monitor {monitor.monitor_id} exceeded its evaluation "
+                f"budget {monitor.strikes} times; disarming."
+            )
+            self.disarm(monitor.monitor_id, "authored_timeout", detail)
+            return True
+        return False
+
+    def _array_worker(self) -> None:
+        """The array lane: evaluate camera/numpy monitors on their own periods.
+
+        Sleeps until the next due monitor (stop-aware, never past 0.2 s so new
+        arms are picked up promptly). One evaluation per monitor per due tick;
+        a slow monitor delays only this lane. Same strike mechanism and limit
+        as the scalar lane, with the wall budget ARRAY_WALL_BUDGET_MS measured
+        around check(ctx) -- numpy C work never shows up in the line count, so
+        the wall clock is the enforceable bound here.
+        """
+        while not self._array_stop.is_set():
+            with self.lock:
+                monitors = [
+                    m for m in self.monitors.values()
+                    if getattr(m, "feed", "") == "authored_array"
+                ]
+            if not monitors:
+                self._array_stop.wait(0.2)
+                continue
+            now = wall_ns()
+            due = [m for m in monitors if getattr(m, "next_due_ns", 0) <= now]
+            if not due:
+                next_ns = min(getattr(m, "next_due_ns", 0) for m in monitors)
+                self._array_stop.wait(min(max((next_ns - now) / 1e9, 0.005), 0.2))
+                continue
+            for monitor in due:
+                if self._array_stop.is_set():
+                    return
+                # Schedule the next tick from NOW, not from the previous due
+                # time: a slow call skips ticks rather than piling up debt.
+                monitor.next_due_ns = wall_ns() + int(1e9 / float(monitor.rate_hz))
+                try:
+                    value = monitor.evaluate(None)
+                except AuthoredBudgetExceeded as exc:
+                    # A line-budget overrun is a strike and never a fire.
+                    self._authored_strike(monitor, _failure_detail(exc))
+                    continue
+                except AuthoredReturnError as exc:
+                    self._log_warn(
+                        f"array monitor {monitor.monitor_id} bad return: {exc}"
+                    )
+                    self.disarm(
+                        monitor.monitor_id, "authored_bad_return",
+                        _failure_detail(exc),
+                    )
+                    continue
+                except Exception as exc:
+                    self._log_warn(
+                        f"array monitor {monitor.monitor_id} raised: {exc}"
+                    )
+                    self.disarm(
+                        monitor.monitor_id, "authored_error", _failure_detail(exc)
+                    )
+                    continue
+                wall_ms = monitor.last_wall_time_sec * 1000.0
+                if wall_ms > ARRAY_WALL_BUDGET_MS:
+                    overrun = self._authored_strike(monitor, _failure_detail(
+                        f"wall time {wall_ms:.1f} ms exceeded the array lane's "
+                        f"{ARRAY_WALL_BUDGET_MS:.0f} ms per-call budget"
+                    ))
+                    if overrun:
+                        continue
+                if value is not None:
+                    self._handle_fire(monitor, float(value))
+
+    def arm(self, monitor: MonitorPrimitive) -> dict[str, Any]:
+        with self.lock:
+            if monitor.monitor_id in self.monitors:
+                raise ValueError(f"monitor_id {monitor.monitor_id!r} is already armed.")
+            if not monitor.armed_wall_ns:
+                monitor.armed_wall_ns = wall_ns()
+            self.monitors[monitor.monitor_id] = monitor
+        provenance = dict(getattr(monitor, "provenance", None) or {})
+        # provenance["object_id"] is the arm-time resolution done by the
+        # server (which owns the registry and the held-part question); fall
+        # back to the monitor's own subject so an arm that bypassed the
+        # server still attributes as well as it can.
+        object_id = provenance.pop("object_id", None) or monitor.subject_object_id
+        authored = _authored_fields(monitor)
+        payload = MonitorArmedPayload(
+            monitor_id=monitor.monitor_id,
+            monitor_type=monitor.monitor_type,
+            params=monitor.params,
+            clause=monitor.clause,
+            halt_on_fire=monitor.halt_on_fire,
+            object_id=object_id,
+            threshold=_finite_or_none(monitor.threshold),
+            comparison=monitor.comparison or "",
+            reference_values=dict(monitor.reference_values),
+            **provenance,
+            **authored,
+        )
+        self._publish(make_event("monitor_armed", payload))
+        # The tool result mirrors the event so mcp_calls_watchdog.jsonl is
+        # self-sufficient for the arming sub-scores -- object, threshold and
+        # provenance all readable without joining to events_watchdog.jsonl.
+        return {
+            "monitor_id": monitor.monitor_id,
+            "monitor_type": monitor.monitor_type,
+            "object_id": object_id,
+            "threshold": _finite_or_none(monitor.threshold),
+            "comparison": monitor.comparison or "",
+            "reference_values": dict(monitor.reference_values),
+            "threshold_source": payload.threshold_source,
+            "provenance_object_source": payload.provenance_object_source,
+            "threshold_verified": payload.threshold_verified,
+            "threshold_registry_field": payload.threshold_registry_field,
+            "threshold_registry_value": payload.threshold_registry_value,
+            **authored,
+            **(
+                {"param_provenance": payload.param_provenance}
+                if payload.param_provenance is not None
+                else {}
+            ),
+        }
+
+    def disarm(self, monitor_id: str, reason: str, detail: str | None = None) -> bool:
+        with self.lock:
+            monitor = self.monitors.pop(monitor_id, None)
+        if monitor is None:
+            return False
+        self._emit_disarmed(monitor, reason, detail)
+        return True
+
+    def disarm_all(self, reason: str) -> list[str]:
+        with self.lock:
+            monitors = list(self.monitors.values())
+            self.monitors.clear()
+        for monitor in monitors:
+            self._emit_disarmed(monitor, reason)
+        return [monitor.monitor_id for monitor in monitors]
+
+    def on_skill_event(
+        self,
+        event_type: str,
+        skill_name: str | None,
+        params: dict[str, Any] | None,
+        ok: Any = None,
+    ) -> None:
+        """React to an executor skill event observed on the shared event bus.
+
+        Two mechanical consequences, both keyed on the event alone -- no
+        cross-process call and nothing the agent has to be told to do:
+
+          * grasp/release bracket the held span, so effort fires (which are
+            joint-scoped) can be attributed to the part in the gripper.
+          * a release ends the held span by definition, so the slip monitor
+            watching that span comes down with it, before the opening jaws can
+            register as a slip. release_skill emits skill_start before
+            backend.gripper.open(), which is the margin this relies on.
+
+        A reorient set-down is a release like any other and needs no special
+        case; the re-pick arms a fresh slip monitor as usual.
+        """
+        if event_type == "skill_start" and skill_name == "grasp_skill":
+            object_id = (params or {}).get("object_id")
+            if isinstance(object_id, str):
+                self._held_object_id = object_id
+                self._held_confirmed = False
+            return
+
+        if event_type == "skill_end" and skill_name == "grasp_skill":
+            if ok is True:
+                self._held_confirmed = True
+            else:
+                # The grasp did not take: nothing is held.
+                self._held_object_id = None
+                self._held_confirmed = False
+            return
+
+        if event_type == "skill_start" and skill_name == "release_skill":
+            object_id = (params or {}).get("object_id")
+            if isinstance(object_id, str):
+                self._release_disarm_slip_monitors(object_id)
+                if self._held_object_id == object_id:
+                    self._held_object_id = None
+                    self._held_confirmed = False
+            return
+
+    def held_object_id(self) -> str | None:
+        """Return the part currently in the gripper, or None."""
+        return self._held_object_id
+
+    def _release_disarm_slip_monitors(self, object_id: str) -> list[str]:
+        """Disarm the released part's slip monitors, and only those.
+
+        Scoped by subject: a stationarity monitor on some other part, an
+        effort monitor, or a slip monitor on a different part all stay armed.
+        The disarm is emitted with its own reason so the record distinguishes
+        "torn down because the part was released" from an agent-initiated
+        disarm and from never having been armed.
+        """
+        with self.lock:
+            doomed = [
+                monitor
+                for monitor in self.monitors.values()
+                if monitor.monitor_type == "relative_frame"
+                and monitor.subject_object_id == object_id
+            ]
+            for monitor in doomed:
+                self.monitors.pop(monitor.monitor_id, None)
+        for monitor in doomed:
+            self._emit_disarmed(monitor, "auto_disarm_release")
+        if doomed:
+            self._log_warn(
+                "released %s: auto-disarmed %d slip monitor(s) %s"
+                % (object_id, len(doomed), [m.monitor_id for m in doomed])
+            )
+        return [monitor.monitor_id for monitor in doomed]
+
+    def on_tf_tick(self, recorder: Any) -> None:
+        self._evaluate_feed("tf", recorder)
+        self._authored_wake.set()
+
+    def on_joint_state(self, msg: Any) -> None:
+        self._evaluate_feed("joint_states", msg)
+        self._authored_wake.set()
+
+    def pop_fires(self) -> list[dict[str, Any]]:
+        with self.lock:
+            fires = list(self._fire_queue)
+            self._fire_queue.clear()
+        return fires
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self.lock:
+            monitors = list(self.monitors.values())
+        return [
+            {
+                "monitor_id": monitor.monitor_id,
+                "monitor_type": monitor.monitor_type,
+                "params": dict(monitor.params),
+                "clause": monitor.clause,
+                "halt_on_fire": monitor.halt_on_fire,
+                "armed_wall_ns": monitor.armed_wall_ns,
+                **_authored_fields(monitor),
+            }
+            for monitor in monitors
+        ]
+
+    def _evaluate_feed(self, feed: str, sample: Any) -> None:
+        with self.lock:
+            monitors = [m for m in self.monitors.values() if m.feed == feed]
+        for monitor in monitors:
+            try:
+                triggering_value = monitor.evaluate(sample)
+            except Exception as exc:
+                self._log_warn(f"monitor {monitor.monitor_id} raised: {exc}")
+                self.disarm(monitor.monitor_id, "internal_error")
+                continue
+            if triggering_value is not None:
+                self._handle_fire(monitor, float(triggering_value))
+
+    def _handle_fire(self, monitor: MonitorPrimitive, triggering_value: float) -> None:
+        trigger_stamp = wall_ns()
+        action_taken = "flag"
+        halt_result: dict[str, Any] | None = None
+        if monitor.halt_on_fire and self.halt_client is not None:
+            try:
+                halt_result = self.halt_client.halt(
+                    monitor.monitor_id,
+                    f"monitor {monitor.monitor_id} fired",
+                )
+            except Exception as exc:
+                self._log_warn(f"halt client raised for {monitor.monitor_id}: {exc}")
+                halt_result = {"ok": False, "detail": str(exc), "goals_cancelled": None}
+            # action_taken reports what the halt actually achieved, not merely
+            # that it was attempted: goals_cancelled distinguishes "cancelled
+            # something active" from "the cancel landed but nothing was
+            # active to stop" from "the cancel itself failed or timed out".
+            if not halt_result.get("ok"):
+                action_taken = "halt_failed"
+            elif halt_result.get("goals_cancelled"):
+                action_taken = "halt"
+            else:
+                action_taken = "halt_no_active_goal"
+        object_id = self._resolve_fire_object_id(monitor)
+        authored = _authored_fields(monitor)
+        if authored:
+            # detail is authored-only: the optional str the firing check()
+            # returned beside its value. _finite_or_none guards the threshold
+            # the same way the armed payload's is guarded -- an authored
+            # threshold is finite by construction, but a NaN must never be
+            # the thing that makes a fire unparseable.
+            authored["detail"] = getattr(monitor, "last_detail", None)
+        payload = MonitorFirePayload(
+            monitor_id=monitor.monitor_id,
+            monitor_type=monitor.monitor_type,
+            trigger_wall_ns=trigger_stamp,
+            triggering_value=triggering_value,
+            threshold=(
+                float(monitor.threshold)
+                if not authored
+                else (_finite_or_none(monitor.threshold) or 0.0)
+            ),
+            comparison=monitor.comparison,
+            clause=self._clause_with_object_id(monitor.clause, object_id),
+            object_id=object_id,
+            # Carried from the arm, not re-derived: the audit question is
+            # where the ARMED value came from.
+            **_fire_provenance(monitor),
+            action_taken=action_taken,
+            halt_result=halt_result,
+            **authored,
+        )
+        fire_dict = payload.model_dump(mode="json")
+        with self.lock:
+            current = self.monitors.pop(monitor.monitor_id, None)
+            if current is None:
+                return
+            self._fire_queue.append(fire_dict)
+        self._publish(make_event("monitor_fire", payload))
+        self._emit_disarmed(monitor, "fired")
+        self.wake_event.set()
+
+    def _resolve_fire_object_id(self, monitor: MonitorPrimitive) -> str | None:
+        """Attribute a fire to an object structurally, not from the clause.
+
+        One path, two sources. A monitor that is intrinsically about an object
+        (relative_frame's child_frame, stationarity's and region's object_id)
+        answers for itself. effort_event watches a joint and has no intrinsic
+        object, so the question "which part was being grasped when the clamp
+        bound was exceeded" is answered from cell state at fire time -- the
+        held span tracked from the event stream. None is a real answer there:
+        an effort fire with an empty gripper.
+        """
+        subject = monitor.subject_object_id
+        if subject is not None:
+            return subject
+        return self._held_object_id
+
+    @staticmethod
+    def _clause_with_object_id(
+        clause: dict[str, Any] | None, object_id: str | None
+    ) -> dict[str, Any] | None:
+        """Backfill object_id into the clause without mutating the monitor's."""
+        if clause is None or object_id is None:
+            return clause
+        if clause.get("object_id") is not None:
+            return clause
+        enriched = dict(clause)
+        enriched["object_id"] = object_id
+        return enriched
+
+    def _emit_disarmed(
+        self, monitor: MonitorPrimitive, reason: str, detail: str | None = None
+    ) -> None:
+        self._publish(make_event(
+            "monitor_disarmed",
+            MonitorDisarmedPayload(
+                monitor_id=monitor.monitor_id,
+                reason=reason,
+                detail=detail,
+            ),
+        ))
+
+    def _publish(self, event: Any) -> None:
+        try:
+            if self.event_bus is not None:
+                self.event_bus.publish(event)
+        except Exception as exc:
+            self._log_warn(f"WatchDog event publish failed: {exc}")
+
+    def _log_warn(self, message: str) -> None:
+        logger = self.logger
+        if logger is not None:
+            try:
+                logger.warning(message)
+            except Exception:
+                pass

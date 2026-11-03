@@ -1,0 +1,226 @@
+# WATCHDOG instruction for fmb_assembly_2.
+#
+# Contains only WHAT must be true (effects + invariants), never the executor's
+# path. The executor may reach the end-state by any route; the watchdog
+# verdicts on the end-state and the invariants, not on how the executor got
+# there.
+#
+# Object-level truth lives in model_registry.yaml, shared by both files.
+
+name: fmb_assembly_2
+instruction_spec: |
+  Verify that four FMB parts are seated on the base1 fixture: u_brown,
+  u_orange, line_green and inverted_u_yellow.
+
+  Each part's required end-state is given by a published TF frame, not by a
+  fixed world pose: u_brown_placement, u_orange_placement,
+  line_green_placement, inverted_u_yellow_placement. Query the frame to obtain
+  the required pose.
+  A destination frame gives the pose the PART must reach, not a gripper pose.
+
+  Effects (must hold when the executor closes each place step):
+    - The part is seated at its placement frame, within tolerance.
+    - The part was gripped at the width the step calls for and lifted clear
+      of where it started.
+    - base1 is undisturbed: it is the fixture and is never picked.
+
+    - Missed grasp: a grasp the executor reports as holding the part must
+      actually hold it, and must close on that part and not another.
+
+  Invariants (must hold throughout each step):
+    - Clamp effort on the part never exceeds what that part tolerates.
+
+    - In-hand slippage: while a part is held, it must not move relative to
+      the gripper before it is released.
+
+    - Undisturbed objects: every object a step does not act on must stay
+      where it last came to rest until some step acts on it.
+
+      This set's own parts rotate through that cycle, becoming active when a
+      step names them and inactive again once their place step closes. The
+      OTHER assembly's parts never do: no step here acts on any of them, so
+      they are inactive from run start to run end and the requirement stands
+      over them continuously. Any movement of one, at any time, is a
+      disturbance. They are listed under object_ids as BYSTANDERS.
+
+  Workspace observation: observe and monitor the working area for the whole
+  run, not only at step boundaries; its camera images and depth data are
+  published. Report any unexpected event: an object present that is not
+  listed under object_ids, an object that moves when the robot did not move
+  it, or someone or something entering the workspace and later leaving.
+  Report each one with what it is (as far as the evidence allows), where it
+  is, and when it appeared -- and when it left, if it did. An unexpected
+  event is not a violation by itself; it is a violation only if it breaks
+  another requirement.
+
+  Preconditions: this task has none. Do not look for them and do not treat
+  their absence as something missing.
+
+  Note on intermediate handling: a part resting somewhere other than its
+  placement frame partway through the run is NOT by itself a violation. Judge
+  each part against its placement frame at the point the executor closes that
+  part's place step, not before.
+
+step_plan: |
+  Four parts must end seated at their published placement frames, each
+  gripped within the effort the part tolerates, without slipping in the
+  gripper, and without disturbing any part that is not the one currently
+  being worked on, or the base1 fixture.
+
+  The parts are worked one at a time, in this order:
+
+    1. u_brown           -> u_brown_placement
+    2. u_orange          -> u_orange_placement
+    3. line_green        -> line_green_placement
+    4. inverted_u_yellow -> inverted_u_yellow_placement
+
+  The other assembly's parts (object_ids, BYSTANDERS) are on the table
+  throughout and must never move, so at any moment the objects that must
+  stay still are those plus whichever of this set's four is not active.
+
+  A part starts being worked on when the executor begins the first step
+  naming it, and stops when its place step closes. Each part is picked once
+  and carried straight to its placement -- no part is set down and re-picked.
+  begin_step's object_ids names the part being worked on; this ordering is
+  what you fall back on when it does not.
+
+  Each part's effects are judged at one moment: when that part's own place
+  step closes. That is the milestone for that part -- the point its end-state
+  has come into existence and can be checked. The steps before it in the
+  part's span are transit and pick; the invariants apply throughout them, but
+  a part is not yet seated at the end of a lift.
+
+  The executor is free to reach each end-state however it chooses. Extra
+  steps, alternative approaches, and steps this plan does not list are all
+  acceptable in themselves; the plan is what is expected, not the only thing
+  permitted. What matters is that the process requirements hold throughout
+  and that each part is correctly seated when its own place step closes. A
+  step you do not recognize is judged the same way as any other -- by whether
+  the requirements held while it happened, not by whether it was on the plan.
+
+steps:
+
+  # --- u_brown: picked, lifted, placed ---
+  - step_id: pick_u_brown
+    object_id: u_brown
+    grasp_width_m: 0.02
+    contract_clause_groups: [invariants]
+
+  - step_id: place_approach_u_brown
+    object_id: u_brown
+    grasp_width_m: 0.02
+    contract_clause_groups: [invariants]
+
+  - step_id: place_u_brown
+    object_id: u_brown
+    grasp_width_m: 0.02
+    contract_clause_groups: [effects, invariants]
+
+  # --- u_orange: picked, lifted, placed ---
+  - step_id: pick_u_orange
+    object_id: u_orange
+    grasp_width_m: 0.02
+    contract_clause_groups: [invariants]
+
+  - step_id: place_approach_u_orange
+    object_id: u_orange
+    grasp_width_m: 0.02
+    contract_clause_groups: [invariants]
+
+  - step_id: place_u_orange
+    object_id: u_orange
+    grasp_width_m: 0.02
+    contract_clause_groups: [effects, invariants]
+
+  # --- line_green: same shape as u_orange ---
+  - step_id: pick_line_green
+    object_id: line_green
+    grasp_width_m: 0.03
+    contract_clause_groups: [invariants]
+
+  - step_id: place_approach_line_green
+    object_id: line_green
+    grasp_width_m: 0.03
+    contract_clause_groups: [invariants]
+
+  - step_id: place_line_green
+    object_id: line_green
+    grasp_width_m: 0.03
+    contract_clause_groups: [effects, invariants]
+
+
+  # --- inverted_u_yellow: same shape as u_brown ---
+  - step_id: pick_inverted_u_yellow
+    object_id: inverted_u_yellow
+    grasp_width_m: 0.04
+    contract_clause_groups: [invariants]
+
+  - step_id: place_approach_inverted_u_yellow
+    object_id: inverted_u_yellow
+    grasp_width_m: 0.04
+    contract_clause_groups: [invariants]
+
+  - step_id: place_inverted_u_yellow
+    object_id: inverted_u_yellow
+    grasp_width_m: 0.04
+    contract_clause_groups: [effects, invariants]
+object_ids: |
+  u_brown          — FMB U part, graspable. Must end seated at u_brown_placement.
+  inverted_u_yellow — FMB inverted-U part, graspable. Must end seated at
+                     inverted_u_yellow_placement.
+  u_orange         — FMB U part, graspable. Must end seated at u_orange_placement.
+  line_green       — FMB line part, graspable. Must end seated at
+                     line_green_placement.
+  base1            — the fixture. NOT graspable, never picked, must stay put.
+
+  BYSTANDERS — the other FMB assembly's objects. PRESENT on the table for
+  this entire run, but NOT part of this task: never picked, placed or
+  otherwise manipulated here, no placement frames, absent from the steps
+  block. Do not look for an end-state for them and do not treat their not
+  being seated as something missing. Their only requirement is that they
+  do not move -- any movement of one, at any time, is a disturbance.
+
+  u_green           — other assembly's part; must not move.
+  inverted_u_brown  — other assembly's part; must not move.
+  hex_blue          — other assembly's part; must not move.
+  hex_red           — other assembly's part; must not move.
+  base2             — other assembly's fixture; not used here, must stay put.
+
+  Registry acm_allowed_object_pairs covers every pair among ALL TEN FMB
+  objects -- this assembly's five AND the other assembly's five, including
+  every cross-assembly pair such as u_brown against u_green, or line_green
+  against base2. That is a planner collision-checking setting, not a
+  statement of task permission: contact between any of those parts is
+  conformant only insofar as the effect clauses above are satisfied.
+
+  The cross-assembly pairs are switched off DELIBERATELY, and you are the
+  reason: a collision the planner avoids is a collision nobody measures.
+
+  Be precise about HOW a bystander can actually be disturbed, because there
+  are two contact channels and only one of them is open:
+
+    - A CARRIED PART against a bystander -- REAL. That pair is ACM-permitted,
+      so the planner will not refuse a path that carries a held part straight
+      through a bystander, and no collision is raised when it does. This is
+      the channel by which a bystander can physically be shifted, and it is
+      the one to expect.
+
+    - The ARM or GRIPPER against a bystander -- DOES NOT OCCUR. The ACM
+      exempts object-against-object pairs only; it never exempts the gripper
+      or any arm link, and the bystanders are in the planning scene. The
+      planner therefore routes the arm around them. Do not watch for a direct
+      arm-strike on a bystander and do not reason about one; it cannot
+      happen, and looking for it costs attention the real channel needs.
+
+  So a bystander disturbance reaches you as PART-ON-PART contact: something
+  held, dragged into something stationary. Nothing upstream guards against
+  it -- the planner has been told that contact is allowed -- so the standing
+  stationarity requirement is the bystanders' only protection. If a bystander
+  moves, that is the violation, and catching it is yours alone.
+
+# run_notes stays empty: anything here renders into EVERY scenario's task, and
+# a note naming a scenario-gated tool (observed live: arm_custom_monitor
+# rendered into the S1 WatchDog's task, a tool S1 does not serve) makes the
+# task contradict the session's actual tool surface.
+run_notes: ""
+# Stays empty by design.
