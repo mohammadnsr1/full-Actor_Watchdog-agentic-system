@@ -191,6 +191,8 @@ def _launch_setup(context):
     output_stamp_mode = LaunchConfiguration("output_stamp_mode")
     launch_scene_sync = LaunchConfiguration("launch_scene_sync")
     start_orchestrator = LaunchConfiguration("start_orchestrator")
+    start_planning_service = LaunchConfiguration("start_planning_service")
+    cell_config_path = LaunchConfiguration("cell_config_path")
     guard_mode = LaunchConfiguration("guard_mode")
     gate_timeout_sec = LaunchConfiguration("gate_timeout_sec")
     start_rg2_controller = LaunchConfiguration("start_rg2_controller")
@@ -214,6 +216,7 @@ def _launch_setup(context):
     bridge_launch_dir = PathJoinSubstitution([FindPackageShare("isaac_trajectory_bridge"), "launch"])
     sim_bringup_launch_dir = PathJoinSubstitution([FindPackageShare("sim_moveit_bringup"), "launch"])
     orchestrator_launch_dir = PathJoinSubstitution([FindPackageShare("cell_orchestrator"), "launch"])
+    planning_launch_dir = PathJoinSubstitution([FindPackageShare("cell_planning_service"), "launch"])
     filter_enabled = _is_truthy(filter_pointcloud.perform(context))
     raw_topic_value = raw_pointcloud_topic.perform(context)
     filtered_topic_value = filtered_pointcloud_topic.perform(context)
@@ -392,6 +395,19 @@ def _launch_setup(context):
                 "log_dir": orchestrator_log_dir_value,
             }.items(),
             condition=IfCondition(start_orchestrator),
+        ),
+        # The cell's planning service (Milestone 3): plan-only, backend chosen
+        # by config/cell.yaml planner.backend. MoveIt stays up for planning;
+        # nothing in the executor's path executes through it.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution([planning_launch_dir, "planning_service.launch.py"])
+            ),
+            launch_arguments={
+                "use_sim_time": use_sim_time,
+                "cell_config_path": cell_config_path,
+            }.items(),
+            condition=IfCondition(start_planning_service),
         ),
         # Session recording. rosbag2 stamps recv_timestamp from the SYSTEM
         # clock even under use_sim_time -- so this recorder is deliberately NOT
@@ -635,6 +651,19 @@ def generate_launch_description():
                     "the monitoring agent and executor are started separately "
                     "afterward. See operator sequence in agents/README.md."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "start_planning_service",
+                default_value="true",
+                description=(
+                    "Launch the cell planning service (cell_planning_service/launch/"
+                    "planning_service.launch.py). The backend comes from config/cell.yaml."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "cell_config_path",
+                default_value="",
+                description="Explicit path to config/cell.yaml; empty = CELL_CONFIG_PATH or repo walk-up.",
             ),
             DeclareLaunchArgument(
                 "guard_mode",

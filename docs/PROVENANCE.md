@@ -30,6 +30,19 @@ Copy method: `rsync -a` / `cp`, excluding `__pycache__`, `*.pyc`, `.pytest_cache
 
 The full file list follows (generated from the INTEGRATION tree after the copy; every path below exists at the same relative path in the source repository except the relocated and edited files listed above).
 
+## Milestone 3 (2026-11-03): no new copies
+
+Everything in `cell_planner_msgs`, `cell_planning_service`, `cell_planning_curobo`, `config/cell.yaml`, `config/robot/rg2_collision_spheres.yaml`, and `robot_backend/cell_config.py` was written fresh. Values carried over from WATCHDOG code, with their source:
+
+| Value | Where it is now | Source in WATCHDOG |
+|---|---|---|
+| Pose-goal planning budget 15 s, 30 attempts | `config/cell.yaml` `planner.moveit` | `robot_backend/ros_moveit_backend/motion.py:265-266` |
+| Position 1e-4 m, orientation 1e-3 rad, joint 1e-4 rad tolerances | same | `motion.py:56-65` |
+| Joint velocity/acceleration limits | read at run time from `ur5e_moveit_config/config/joint_limits.yaml` | same file |
+| UR5e arm collision spheres | read at run time from `config/robot/ur5e.xrdf` | `config/ur5e.xrdf` |
+
+Edited WATCHDOG-derived files in M3: `robot_backend/robot_backend/watchdog/halt.py` (rewritten, configurable targets), `robot_backend/robot_backend/mcp_servers/watchdog_mcp_server.py` (halt construction only), `robot_backend/package.xml` (missing dependencies), `robot_backend/test/test_watchdog_halt_callback_group.py` (stub service name follows the client's primary target), `sim_moveit_bringup/launch/sim_moveit_bringup.launch.py` and `package.xml` (planning-service include and two launch arguments).
+
 ## DROIDSTACK idea credits
 
 DROIDSTACK (`/home/mohammad/droidstack`, branch `dev`, commit `17192dbca327771cb63eb22688b7ff1d62921ea5`) is unlicensed and belongs to a labmate. No code was copied or paraphrased from it. Designs credited to it as ideas, to be implemented from scratch in the milestone shown:

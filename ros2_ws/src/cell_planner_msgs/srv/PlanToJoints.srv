@@ -1,0 +1,19 @@
+# Plan a collision-free joint trajectory to a joint-space goal.
+
+string planning_group
+# Goal, as parallel arrays. Must cover every joint of the group.
+string[] joint_names
+float64[] joint_positions
+# Start state. Empty name list = plan from the current /joint_states.
+sensor_msgs/JointState start_state
+# <= 0 = backend default.
+float64 joint_tolerance_rad
+float64 allowed_planning_time_s
+int32 num_planning_attempts
+float64 max_velocity_scaling
+float64 max_acceleration_scaling
+string planner_id
+---
+bool ok
+trajectory_msgs/JointTrajectory trajectory
+PlanningReport report

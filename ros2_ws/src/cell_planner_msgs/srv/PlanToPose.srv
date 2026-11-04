@@ -1,0 +1,26 @@
+# Plan a collision-free joint trajectory that brings tip_link to target.
+# The service never executes; the caller sends the trajectory to the bridge.
+
+# Planning group (for example ur_manipulator). Required.
+string planning_group
+# Link the target pose refers to (for example tcp). Required.
+string tip_link
+# Target pose with its frame in header.frame_id. Required.
+geometry_msgs/PoseStamped target
+# Start state. Empty name list = plan from the current /joint_states.
+sensor_msgs/JointState start_state
+# Goal tolerances. <= 0 = backend default.
+float64 position_tolerance_m
+float64 orientation_tolerance_rad
+# Planning budget. <= 0 = backend default.
+float64 allowed_planning_time_s
+int32 num_planning_attempts
+# Scaling in (0, 1]. <= 0 = 1.0.
+float64 max_velocity_scaling
+float64 max_acceleration_scaling
+# Backend-specific planner id. Empty = backend default.
+string planner_id
+---
+bool ok
+trajectory_msgs/JointTrajectory trajectory
+PlanningReport report

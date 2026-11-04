@@ -704,10 +704,19 @@ def _ensure_watchdog() -> WatchDogContext:
         image_buffer, image_manager, camera_streams = _build_camera_pipeline(
             node, ReentrantCallbackGroup()
         )
+        # Halt targets come from config/cell.yaml watchdog.halt.cancel_targets
+        # (first = decides ok, rest = extras). Default: the bridge's
+        # FollowJointTrajectory cancel service alone.
+        from robot_backend.cell_config import load_cell_config, section as _cfg_section
+
+        _cell_cfg, _ = load_cell_config()
+        _halt_cfg = _cfg_section(_cell_cfg, "watchdog", "halt")
         halt_client = HaltClient(
             node=node,
             event_bus=event_bus,
             callback_group=client_cb_group,
+            timeout_sec=float(_halt_cfg.get("timeout_s", 1.0)),
+            cancel_targets=_halt_cfg.get("cancel_targets") or None,
         )
         ready_client = ReadyClient(
             node=node,

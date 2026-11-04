@@ -1,0 +1,13 @@
+# Pull the named registry objects' current TF poses into the planning world.
+# Delegates to the cell's /sync_scene_objects (the registry owner); the
+# planning service itself stays registry-free. Kept separate from
+# AddCollisionObject on purpose. Pose queries never call this.
+
+string[] object_ids
+---
+bool ok
+string[] synced_object_ids
+string[] failed_object_ids
+string[] skipped_object_ids
+string message
+PlanningReport report

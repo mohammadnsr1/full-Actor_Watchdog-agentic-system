@@ -1,0 +1,24 @@
+# RG2 collision spheres for the cuRobo backend, merged on top of the UR5e arm
+# spheres in ur5e.xrdf (which stops at the `tcp` link).
+#
+# TODO(mohammad): fill the spheres. Two ways to generate them:
+#   1. Isaac Sim: Window > Isaac Utils > Robot Description Editor (the tool
+#      that produced ur5e.xrdf). Load the URDF that includes the RG2
+#      (ros2_ws/src/robot_description/urdf/ur5e_ros.urdf) and export; copy the
+#      entries for the onrobot_rg2_* links into the `spheres:` map below.
+#   2. cuRobo: `python -m curobo.util.usd_helper` / the collision sphere
+#      generator example in the cuRobo repo (examples/robot_sphere_fit.py at
+#      v0.7.8), pointed at the RG2 meshes in
+#      ros2_ws/src/onrobot_rg_description/meshes.
+# Until filled, the cuRobo backend refuses to start with a clear error rather
+# than planning with an unmodelled gripper.
+#
+# Format: link name -> list of {center: [x, y, z] (m, in the link frame), radius: m}
+spheres:
+  onrobot_rg2_base_link: []
+  onrobot_rg2_left_outer_knuckle: []
+  onrobot_rg2_left_inner_knuckle: []
+  onrobot_rg2_left_inner_finger: []
+  onrobot_rg2_right_outer_knuckle: []
+  onrobot_rg2_right_inner_knuckle: []
+  onrobot_rg2_right_inner_finger: []

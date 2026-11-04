@@ -78,7 +78,7 @@ def test_halt_response_completes_while_joint_callback_is_blocked() -> None:
         halt_client.prewarm()
         cancel_service = stub_node.create_service(
             CancelGoal,
-            "/move_action/_action/cancel_goal",
+            halt_client.primary_target,
             _cancel,
         )
         deadline = time.monotonic() + 2.0

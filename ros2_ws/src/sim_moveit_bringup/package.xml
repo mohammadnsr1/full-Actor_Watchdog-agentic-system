@@ -25,6 +25,7 @@
   <exec_depend>robot_backend</exec_depend>
   <exec_depend>robot_backend_interfaces</exec_depend>
   <exec_depend>cell_orchestrator</exec_depend>
+  <exec_depend>cell_planning_service</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

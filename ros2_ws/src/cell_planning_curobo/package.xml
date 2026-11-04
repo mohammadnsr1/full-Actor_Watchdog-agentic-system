@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cell_planning_curobo</name>
+  <version>0.1.0</version>
+  <description>cuRobo backend for the cell planning service. Same services as cell_planning_service, GPU planner, runs in its own Python environment (PyTorch + CUDA + cuRobo v0.7.8). See INSTALL.md.</description>
+  <maintainer email="mnasr3@asu.edu">Mohammad Nasr</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>cell_planner_msgs</exec_depend>
+  <exec_depend>cell_planning_service</exec_depend>
+  <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>shape_msgs</exec_depend>
+  <exec_depend>robot_backend_interfaces</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

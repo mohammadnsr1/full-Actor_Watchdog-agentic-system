@@ -1,0 +1,7 @@
+# Remove one collision object from the planning world by id.
+
+string object_id
+---
+bool ok
+string message
+PlanningReport report

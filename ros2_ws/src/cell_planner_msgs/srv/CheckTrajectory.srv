@@ -1,0 +1,14 @@
+# Collision-check a given joint trajectory against the current world.
+
+string planning_group
+trajectory_msgs/JointTrajectory trajectory
+# Max joint-space step (rad) between checked states; intermediate states
+# are interpolated when consecutive points are further apart. <= 0 = default.
+float64 check_resolution_rad
+---
+bool valid
+# Index of the first trajectory point found invalid, or -1.
+int32 first_invalid_index
+# "link_a|link_b" pairs in contact at that point.
+string[] contacts
+PlanningReport report

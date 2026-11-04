@@ -1,0 +1,121 @@
+# Cell configuration. Read by the planning service (planner section), the
+# WatchDog server (watchdog section), and, from Milestone 6 on, the episode
+# runner and supervisor. Values marked TODO(mohammad) are unknown and must be
+# set before the feature that reads them is used; nothing here is invented.
+#
+# Location: CELL_CONFIG_PATH overrides; otherwise processes walk up from their
+# own file to the repo root (the directory holding config/cell.yaml and ros2_ws/).
+
+# record_only: WatchDog never halts, even when a monitor is armed with halt_on_fire.
+# halt_enabled: halts fire. (Read in Milestone 4.)
+mode: record_only
+
+planner:
+  # moveit | curobo. The launch file picks the executable from this.
+  backend: moveit
+  service_namespace: /cell/planning
+  joint_state_topic: /joint_states
+  # Experimental depth-obstacle layer for the cuRobo backend. Off by default.
+  depth_obstacles: false
+
+  moveit:
+    # Defaults applied when a request leaves the field at zero.
+    # allowed_planning_time_s and num_planning_attempts: the pose-goal defaults
+    # of the WatchDog motion backend (ros_moveit_backend/motion.py:265-266).
+    allowed_planning_time_s: 15.0
+    num_planning_attempts: 30
+    # Goal precision: the cell's spec, defined once in
+    # ros_moveit_backend/motion.py:56-65 and copied here unchanged.
+    position_tolerance_m: 0.0001
+    orientation_tolerance_rad: 0.001
+    joint_tolerance_rad: 0.0001
+    # Cartesian segment step. The WatchDog stack never used compute_cartesian_path.
+    # TODO(mohammad): choose eef_step_m (metres between path points, e.g. for a
+    # 50 mm insertion) and jump_threshold (0.0 disables the joint-jump filter).
+    eef_step_m: 0.0
+    jump_threshold: 0.0
+    # Joint-space resolution for check_trajectory interpolation.
+    # TODO(mohammad): choose check_resolution_rad; 0.0 means "request must set it".
+    check_resolution_rad: 0.0
+    # Where retiming limits come from when a Cartesian path returns untimed.
+    joint_limits_file: "ur5e_moveit_config:config/joint_limits.yaml"
+    planner_id: ""
+    pipeline_id: ""
+    service_timeout_s: 30.0
+    service_wait_s: 2.0
+    joint_state_timeout_s: 1.0
+
+  curobo:
+    # cuRobo v0.7.8. See ros2_ws/src/cell_planning_curobo/INSTALL.md.
+    # Python interpreter of the cuRobo environment; the node re-execs into it.
+    # TODO(mohammad): set after creating the environment, e.g. ~/.venvs/curobo/bin/python
+    python: ""
+    # Robot description: URDF plus XRDF (arm collision spheres come from the XRDF).
+    urdf: "robot_description:urdf/ur5e_ros.urdf"
+    xrdf: "config/robot/ur5e.xrdf"
+    base_link: base_link
+    ee_link: tcp
+    # RG2 collision spheres, merged on top of the XRDF arm spheres.
+    rg2_spheres: "config/robot/rg2_collision_spheres.yaml"
+    # TODO(mohammad): cuRobo defaults you want to pin (interpolation_dt,
+    # collision_activation_distance, num_trajopt_seeds, ...). Empty = library defaults.
+    motion_gen_overrides: {}
+    # Same request-default semantics as the moveit section.
+    # TODO(mohammad): set after the first successful plan.
+    allowed_planning_time_s: 0.0
+    num_planning_attempts: 0
+    position_tolerance_m: 0.0001
+    orientation_tolerance_rad: 0.001
+    joint_tolerance_rad: 0.0001
+    eef_step_m: 0.0
+    check_resolution_rad: 0.0
+    joint_limits_file: "ur5e_moveit_config:config/joint_limits.yaml"
+    depth:
+      # Experimental. Only read when planner.depth_obstacles is true.
+      depth_topic: /camera/depth/image_raw
+      camera_info_topic: /camera/depth/camera_info
+      world_frame: world
+      # TODO(mohammad): voxel size (m) and the box (m, in world_frame) the
+      # voxel world covers.
+      voxel_size_m: 0.0
+      bounds_min: [0.0, 0.0, 0.0]
+      bounds_max: [0.0, 0.0, 0.0]
+      max_depth_m: 0.0
+
+watchdog:
+  # record_only | halt_enabled  (Milestone 4 reads this; Milestone 3 reads halt.*)
+  mode: record_only
+  consult: false
+  halt:
+    # Cancel-all is sent to every target, in order. The first is the one that
+    # decides `ok`; the rest are extras. The bridge's FollowJointTrajectory
+    # server accepts cancels and returns canceled with no hold published.
+    cancel_targets:
+      - /arm_controller/follow_joint_trajectory/_action/cancel_goal
+      # MoveIt's MoveGroup action, kept as an optional extra for as long as
+      # anything still sends MoveGroup goals. Remove it once nothing does.
+      - /move_action/_action/cancel_goal
+    timeout_s: 1.0
+
+# Milestone 6+. Left as a shape so later code has one place to read.
+budgets:
+  # TODO(mohammad): simulated-seconds budget per episode and the wall guard.
+  episode_sim_s: 0
+  episode_wall_guard_s: 0
+
+health:
+  # TODO(mohammad): staleness limits for the supervisor's checks.
+  joint_states_max_age_s: 0.0
+  sim_clock_max_stall_s: 0.0
+
+recording:
+  frames:
+    image_topic: /recorder_rgb
+    camera_name: recorder
+    rate_hz: 10.0
+    jpeg_quality: 95
+    max_width: 1280
+  video:
+    enabled: false
+
+executor_feedback: watchdog

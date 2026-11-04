@@ -1,0 +1,24 @@
+# Plan a straight-line Cartesian segment (or chain of segments) for tip_link
+# through the waypoints, for approach and insertion moves.
+
+string planning_group
+string tip_link
+# Waypoints in order; all in the same frame (header.frame_id of each).
+geometry_msgs/PoseStamped[] waypoints
+# Start state. Empty name list = plan from the current /joint_states.
+sensor_msgs/JointState start_state
+# Max Cartesian distance between consecutive path points. <= 0 = default.
+float64 eef_step_m
+# Fraction of the path that must be achieved for ok = true, in (0, 1].
+# <= 0 = 1.0.
+float64 min_fraction
+# When false the segment is computed without collision checking.
+bool avoid_collisions
+float64 max_velocity_scaling
+float64 max_acceleration_scaling
+---
+bool ok
+trajectory_msgs/JointTrajectory trajectory
+# Fraction of the requested path that the trajectory covers.
+float64 fraction
+PlanningReport report

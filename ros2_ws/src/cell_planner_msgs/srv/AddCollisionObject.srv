@@ -1,0 +1,8 @@
+# Add (or replace, same id) one collision object in the planning world.
+# Geometry and pose are supplied by the caller; the service holds no registry.
+
+moveit_msgs/CollisionObject object
+---
+bool ok
+string message
+PlanningReport report
