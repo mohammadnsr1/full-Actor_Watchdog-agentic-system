@@ -112,10 +112,29 @@ poses:
   # (objects[].tf_frame, lookup_frame); it is not repeated here.
 
 scene:
-  backend: isaac_command_server      # Milestone 6; until then reset/verify report unavailable
+  backend: isaac_command_server      # isaac/cell_command_server (Milestone 6)
   host: 127.0.0.1
-  # TODO(mohammad): loopback port for the Kit-side command server (Milestone 6).
-  port: 0
+  # Loopback port of the Kit-side command server. 9010 is an arbitrary free
+  # port next to the kit MCP bridge's 9009; change it if it collides.
+  port: 9010
+  # Stage facts read from assets/usd/assembly_room.usd on 2026-11-11.
+  robot_prim: /World/ur5e/root_joint
+  tcp_prim: /World/ur5e/tcp
+  intruder_root: /World/WatchdogIntruders
+  contact_pads:
+    - /World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger
+    - /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger
+  # Arm home pose: ur5e_moveit_config/config/ur5e.srdf group_state "home" (copied).
+  home_joint_positions:
+    shoulder_pan_joint: 0.0
+    shoulder_lift_joint: -1.5708
+    elbow_joint: 1.5708
+    wrist_1_joint: -1.5708
+    wrist_2_joint: -1.5708
+    wrist_3_joint: 0.0
+  play_after_reload: true
+  # ROS-side relay of the Kit contact reports onto topics.pad_contacts
+  contacts_poll_hz: 20.0
 
 # Signal availability. Read by the physical-events node (Milestone 5) and
 # exposed read-only to WatchDog through available_evidence_sources().
@@ -126,7 +145,7 @@ signals:
   finger_effort:   {status: available, source: joint_state}
   gripper_width:   {status: available, source: ground_truth}
   grip_detected:   {status: proxy,     source: guarded_move_stop_reason}
-  pad_contacts:    {status: missing,   source: contact_report}   # becomes available with Milestone 6 contacts_enable
+  pad_contacts:    {status: available, source: contact_report}  # cell_command_server contacts_enable + pad_contacts_relay
   part_poses:      {status: available, source: ground_truth}     # follows poses.source
   robot_tf:        {status: available, source: robot_state_publisher}
   sim_time:        {status: available, source: clock}

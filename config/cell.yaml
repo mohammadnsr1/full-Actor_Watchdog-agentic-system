@@ -117,8 +117,8 @@ physical_events:
   publish_rate_hz: 20.0
   # motion_started / motion_stopped: arm joint-speed norm (rad/s) with a
   # debounce window; source joint_state.
-  motion_speed_threshold_rad_s: 0.0
-  motion_debounce_s: 0.0
+  motion_speed_threshold_rad_s: 0.001
+  motion_debounce_s: 0.001
   # effort_rising: slope of the gripper effort joint over a window; source joint_state.
   effort_rise_rate_per_s: 0.0
   effort_rise_window_s: 0.0
@@ -154,7 +154,13 @@ health:
   sim_clock_max_stall_s: 0.0
 
 recording:
+  # Per-episode MCAP bag (runner/recorder/episode_recording.py). Keys name
+  # entries of the platform's topics/poses blocks; no topic is written here.
+  bag:
+    topic_keys: [joint_states, tf, tf_static, watchdog_events, physical_events, watchdog_notices, executor_facts, pad_contacts]
+    pose_topic_keys: [executor_topic, watchdog_topic]
   frames:
+    enabled: true
     # Empty = the `recorder` camera's rgb topic in config/cameras/<platform>.yaml.
     image_topic: ""
     camera_name: recorder

@@ -1,0 +1,46 @@
+# Seeded layout for fmb_assembly_2 (Milestone 6). Read by the cell command
+# server's load_layout and by the episode runner.
+#
+# TODO(mohammad): the part poses are unknown to me. Capture them from the
+# stage as it is saved (the parts' resting poses) with
+#
+#     printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc 127.0.0.1 9010
+#
+# which overwrites this file with the measured poses, then fill
+# verify_tolerances and, if you want variation across episodes, the per-part
+# jitter ranges. Fixtures are never jittered. Nothing below is invented: the
+# prim paths are read from the stage's TF publisher list; positions are null.
+
+assembly: fmb_assembly_2
+name: nominal
+frame: world
+
+verify_tolerances:
+  position_m: null        # TODO(mohammad)
+  orientation_deg: null   # TODO(mohammad)
+
+parts:
+  u_brown:           {prim: /World/u_brown,           position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
+  u_orange:          {prim: /World/u_orange,          position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
+  line_green:        {prim: /World/line_green,        position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
+  inverted_u_yellow: {prim: /World/inverted_u_yellow, position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
+  # bystanders (the other assembly's parts): placed, never jittered
+  u_green:           {prim: /World/u_green,           position: null, orientation_xyzw: null}
+  inverted_u_brown:  {prim: /World/inverted_u_brown,  position: null, orientation_xyzw: null}
+  hex_blue:          {prim: /World/hex_blue,          position: null, orientation_xyzw: null}
+  hex_red:           {prim: /World/hex_red,           position: null, orientation_xyzw: null}
+
+fixtures:
+  - base1
+  - base2
+
+robot:
+  # From ur5e_moveit_config/config/ur5e.srdf group_state "home" (copied).
+  home_joint_positions:
+    shoulder_pan_joint: 0.0
+    shoulder_lift_joint: -1.5708
+    elbow_joint: 1.5708
+    wrist_1_joint: -1.5708
+    wrist_2_joint: -1.5708
+    wrist_3_joint: 0.0
+  gripper_open_position: -0.558505   # RG2 open, master joint rad (rg2_controller.py:66)

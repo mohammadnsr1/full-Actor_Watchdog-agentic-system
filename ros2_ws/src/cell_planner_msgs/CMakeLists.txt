@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Ruling.msg"
   "msg/WatchdogNotice.msg"
   "msg/PhysicalEvent.msg"
+  "msg/PadContact.msg"
   "srv/PlanToPose.srv"
   "srv/PlanToJoints.srv"
   "srv/PlanCartesian.srv"

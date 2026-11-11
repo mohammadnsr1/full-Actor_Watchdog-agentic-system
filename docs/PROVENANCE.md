@@ -641,6 +641,14 @@ No new files were copied from WATCHDOG. DROIDSTACK was not read.
 | `runner/run_watchdog.sh` | scenario `plan_blind` (default) or `s3`. |
 | `config/cell.yaml` | `physical_events:` thresholds (all TODO). |
 
+## Milestone 6 addendum, 2026-11-11: command server, headless Isaac, sim cameras, recording
+
+No files copied from WATCHDOG. DROIDSTACK was not read; the loopback command-server and headless-launch ideas were already credited above. Stage facts used (prim paths, graph node types, finger pad bodies, the existing camera graph's shape) were read from `assets/usd/assembly_room.usd` with usd-core on 2026-11-11, not from any repo's code. Isaac API names were checked against the installed 5.1 extensions (`isaacsim.core.experimental.prims`, `isaacsim.ros2.bridge` node types, `isaacsim.simulation_app`).
+
+New files, all written from scratch: `isaac/common/kit_api.py` (the only Kit-version-specific module), `isaac/cell_command_server/{server.py, layouts.py, start_in_script_editor.py, test_layouts.py, README.md}`, `isaac/headless/{run_headless.py, README.md}`, `isaac/cameras/{setup_cameras.py, README.md}`, `config/layouts/fmb_assembly_2/nominal.yaml` (poses null, `TODO(mohammad)`; home pose copied from `ur5e_moveit_config/config/ur5e.srdf`; gripper open from `rg2_controller.py:66`), `ros2_ws/src/cell_planner_msgs/msg/PadContact.msg`, `ros2_ws/src/cell_backend_sim/cell_backend_sim/pad_contacts_relay.py`, `runner/recorder/{episode_recording.py, test_episode_recording.py}`.
+
+Edited: `config/platforms/sim.yaml` (`scene` block: port 9010 as an arbitrary loopback choice, stage prim paths, SRDF home pose, contact pads; `pad_contacts` signal now `available`), `config/cell.yaml` (`recording.bag` topic keys, `recording.frames.enabled`), `cell_backend_sim/scene.py` (`load_layout`), `cell_backend_sim/setup.py`, `package.xml`.
+
 ### Removed tests (they tested the removed executor coupling)
 
 `test_executor_terminal_status_source.py`, `test_final_run_verdict_cadence.py`, `test_run_ended_terminal_event.py`, `test_watchdog_forced_termination.py`, `test_watchdog_run_verdict.py`, `test_watchdog_release_lifecycle.py`, `test_tf_time_alignment.py`. Their surviving concerns (held span, release auto-disarm, per-part rollup, backstop finalize, TCP/object alignment) are covered by `test_plan_blind_watchdog.py`.

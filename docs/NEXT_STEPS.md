@@ -1,87 +1,97 @@
 # Next steps
 
-Updated 2026-11-11 at the end of Milestone 5 (v2): physical events, evidence sources, plan-blind WatchDog.
+Updated 2026-11-11 at the end of Milestone 6 (v2): cell command server, headless Isaac, sim cameras, recording.
 
 ## State
 
-- M1, M2: done. M3 and M4: built, and checked live by Mohammad on 2026-11-10 (20 Hz poses, plan-only service, bridge cancel through the platform target, full motion through the sim backend).
-- M5 (this milestone): built and offline-tested here. Not run against Isaac yet. **Not committed** (yours).
-- Container build (M3 step 4) not reported yet; it does not block M5.
+- M1 to M4: done and checked. M5: built; the plan-blind session ran on your side once the config bug was fixed; the physical-event thresholds are yours to set (you said later).
+- M6 (this milestone): written and offline-tested. **The Kit-side code has not run inside Isaac yet** (I cannot run Isaac from here); its first run is your check below. Not committed.
 
-## What Milestone 5 added
+## What Milestone 6 added
 
 | Path | What |
 |---|---|
-| `ros2_ws/src/cell_physical_events/` | Node `physical_events_node` on `/cell/physical_events` (`cell_planner_msgs/PhysicalEvent`: `wall_time_iso`, `sim_time`, `kind`, `scene_ids`, `source`, `confidence`, `value`, `detail`). Eleven kinds; detectors in `detectors.py` are ROS-free and tested. Every threshold lives in `config/cell.yaml: physical_events` and is `TODO(mohammad)`: a zero disables that detector with one warning at start. Started by the bringup (`start_physical_events`). |
-| `config/requirements/fmb_assembly_2.yaml` | The WatchDog's only task input: acceptance parts (placement frame, grasp width), fixtures, bystanders, invariants in prose. No steps. The server refuses a file with `steps`. |
-| `config/parts/watchdog_parts.yaml`, `executor_parts.yaml` | The registry split by role (`tools/split_registry.py`). WatchDog's copy carries tolerances and `limits.sim` / `limits.hardware` (hardware values `TODO`), and each part's feature frames. |
-| WatchDog server | Plan-blind: executor events dropped at ingest; held part from `part_lifted`/`part_released`; object poses from the camera2 pose channel (never object TF), TCP aligned to the observations' stamp; termination on the episode-end notice only; per-part rollup; evidence tagging with `shared_source` and missing-evidence counts; modes `record_only`/`halt_enabled` and `consult` from `cell.yaml`; new tools `arm_wake`, `disarm_wake`, `wrist_pose_cue`, `issue_ruling`, `inspect_acceptance`, `look(camera=)`. Full map in `docs/INDEPENDENCE.md`. |
-| Prompt and configs | `agents/prompts/watchdog_system_plan_blind.txt` (from the S3 prompt), `watchdog_task_plan_blind.txt`, `agents/config/watchdog_agent_plan_blind.yaml`, `config/mcp/watchdog.plan_blind.mcp.json`. `runner/run_watchdog.sh plan_blind` (default) launches it; `run_watchdog.sh s3` keeps the old session for liveness checks. |
-| Tests | 450 pass across the workspace. Seven WATCHDOG tests that tested the removed coupling were deleted (listed in `docs/PROVENANCE.md`) and replaced by `test_plan_blind_watchdog.py`. |
+| `isaac/common/kit_api.py` | The only Kit-version-specific module: stage, timeline, poses, teleport, articulation joints, episode-joint cleanup, contact reports, camera prims and ROS 2 camera graphs. Uses `isaacsim.core.experimental.prims` (present on 5.1, primary on 6.x) with the classic API as fallback, so the 6.1/6.2 move touches this file only. |
+| `isaac/cell_command_server/` | `server.py`: loopback TCP (port `scene.port`, 9010), newline JSON, every command on Kit's main thread. `health`, `report_poses`, `load_layout(assembly, layout, seed)`, `reset`, `verify_reset`, `reload_stage`, `contacts_enable`/`contacts_poll`, `capture_layout`. `layouts.py`: seeded placements (deterministic per seed, jitter ranges per part, fixtures never moved). `start_in_script_editor.py` for the GUI workflow. |
+| `isaac/headless/run_headless.py` | `~/isaacsim/python.sh isaac/headless/run_headless.py`: headless app, ROS 2 bridge on, stage open, server up, Play. `--gui` for debugging. |
+| `isaac/cameras/setup_cameras.py` | Verifies camera2 (`/World/Camera`, `/Graph/ROS_Camera`) against `config/cameras/sim.yaml`; creates camera1 under the wrist with a ROS 2 graph of the same shape once its pose and size are filled and `enabled: true`. |
+| `config/layouts/fmb_assembly_2/nominal.yaml` | Layout schema with prim paths from the stage, home pose from the SRDF, gripper open from the controller; **positions null** until you capture them. |
+| `config/platforms/sim.yaml: scene` | Port, robot and TCP prims, intruder root, finger pads, home pose. `pad_contacts` signal is now `available`. |
+| `cell_planner_msgs/PadContact.msg`, `cell_backend_sim pad_contacts_relay` | Kit cannot publish for the system ROS, so the relay polls the server and publishes `/cell/pad_contacts`. |
+| `runner/recorder/episode_recording.py` | Per-episode MCAP bag (`-s mcap`, topics from `cell.yaml recording.bag` keys into the platform config, pose topics included) plus the frame recorder into `records/<episode_id>/frames/`, `recording.json` manifest, optional ffmpeg video off by default. Works on hardware (no sim time assumed). |
 
-Checked here: full `colcon build` (17 packages); the plan-blind WatchDog context comes up against a bare graph (mode `record_only`, pose source `ground_truth`, 21 objects, TCP frame), a halt in `record_only` is recorded as suppressed with a `halt_id`; the physical events node starts and reports every detector disabled until thresholds are set; the requirements file loads and renders without a `{{STEPS}}` placeholder; the bringup launch imports with the new node.
+Checked here: the Kit modules compile; 20 pure tests (layouts, recording commands, platform config); the relay refuses cleanly when no server is up; `cell_planner_msgs` and `cell_backend_sim` rebuild.
 
-## What you run to check Milestone 5
+A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stale injected prim `/World/WatchdogIntruders/foreign_a41b84` from a paper run. `reset` removes it each episode; you may want to delete it from the saved stage.
 
-1. Rebuild, then set a first set of physical-event thresholds in `config/cell.yaml` so the node has something to publish. Nothing is invented on my side; pick values you can defend from the cell (joint speeds, effort units you have measured, the RG2 geometry):
+## What you run to check Milestone 6
 
-   ```yaml
-   physical_events:
-     motion_speed_threshold_rad_s: <rad/s>    # arm counts as moving above this
-     motion_debounce_s: <s>
-     lift_threshold_m: <m>                    # rise above rest height = lifted
-     hold_distance_m: <m>                     # part within this of the TCP = held
-     release_distance_m: <m>                  # beyond this from the TCP = released
-     settle_speed_m_s: <m/s>
-     settle_window_s: <s>
-     approach_distance_m: <m>
-     engage_distance_m: <m>
-     unknown_object_min_confidence: <0..1>
-   ```
-
-   Leave the effort proxy at zero unless you want contact-by-effort; `effort_rise_*` likewise.
-
-2. Bring the cell up as before. Expect the new line `physical events on /cell/physical_events: 10 parts, 11 frames, pose source ground_truth, effort joint finger_joint` and one warning per detector you left at zero. Then, in a second terminal:
+1. **Command server in the GUI first** (lowest risk). Isaac open, stage playing. Paste `isaac/cell_command_server/start_in_script_editor.py` into the Script Editor and run it. Expect `cell command server: 127.0.0.1 9010 commands: [...]`. Then from a terminal:
 
    ```bash
-   ros2 topic echo /cell/physical_events
-   python3 runner/tools/plan_execute_cancel_check.py --goal 0.0 -1.57 1.57 -1.57 -1.57 0.0 --no-cancel
+   printf '{"command":"health"}\n' | nc 127.0.0.1 9010
+   printf '{"command":"report_poses"}\n' | nc 127.0.0.1 9010 | python3 -m json.tool | head -40
    ```
 
-   Expect `motion_started` then `motion_stopped` with `source: joint_state`. If you move a part by hand in Isaac you should see `part_lifted` (and `part_released`, `part_settled` when you put it down) only if the TCP is near it; otherwise nothing, because held means near the TCP. Paste a few events.
+   Expect `"ok": true`, `playing: true`, `sim_advancing: true`, 23 TF prims, and the stale intruder listed. Paste both outputs.
 
-3. Plan-blind WatchDog session, `record_only` (the default in `cell.yaml`):
+2. **Capture the nominal layout**, then look at the file:
 
    ```bash
-   ./runner/run_watchdog.sh plan_blind
+   printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc 127.0.0.1 9010
    ```
 
-   Expect the session to load the plan-blind prompt and the requirements file, call `available_evidence_sources` and `get_contract` for the four parts, arm monitors and wake conditions, and then wait. It must never see a step name. While it waits, drive the arm with the check script (step 2) and watch whether it wakes on `motion_started`. Then end the episode by hand (the runner does this in M7):
+   It overwrites `config/layouts/fmb_assembly_2/nominal.yaml` with the measured poses. Fill `verify_tolerances` (and jitter ranges if you want variation).
+
+3. **Reset and verify.** Move a part by hand in the viewport, then:
 
    ```bash
-   ros2 topic pub --once /cell/watchdog_notices cell_planner_msgs/msg/WatchdogNotice "{wall_time_iso: '$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)', kind: episode_end, detail: manual}"
+   printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":0}}\n' | nc 127.0.0.1 9010
+   printf '{"command":"verify_reset"}\n' | nc 127.0.0.1 9010
    ```
 
-   Expect the session to wake with `wake: episode_end`, call `inspect_acceptance` (every part should report `pass` or `fail` against its placement frame, or `missing_evidence` if a frame is not published), and record one `record_run_verdict` with `parts_covered` and `evidence_sources`. Paste the final verdict event from `events_watchdog.jsonl` in the session directory.
+   Expect the part back in place, the arm at the SRDF home pose, the gripper open, `removed_intruders` listing the stale prim once, and `verify_reset` passing within your tolerances. This is the first time the experimental prim API is exercised on this stage: if `teleport` or the articulation calls raise, paste the `traceback` field of the response. Then `seed: 3` to see jitter if you set ranges.
 
-4. Optional: set `watchdog.mode: halt_enabled` in `cell.yaml`, restart the session, and call `halt_execution` by hand through the session while the check script moves the arm. Expect the arm to stop and a `halt_id`; then `issue_ruling` on it. In `record_only` the same call returns `suppressed: true`.
+4. **Contacts.** With the server up:
 
-## `TODO(mohammad)` introduced in M5
+   ```bash
+   ros2 run cell_backend_sim pad_contacts_relay &
+   ros2 topic echo /cell/pad_contacts
+   ```
 
-- `config/cell.yaml: physical_events.*` (all thresholds).
-- `config/parts/watchdog_parts.yaml: parts.*.limits.hardware.*` (newtons).
-- Hardware placement frames: on hardware nothing publishes the `*_placement` frames yet, so `inspect_acceptance` reports missing evidence for every part until a fixture-relative frame source exists (camera2 FoundationPose of the fixture plus the known offsets, or a static TF).
-- camera1 stays disabled in `config/cameras/sim.yaml` until the wrist camera is added (M6); until then `wrist_pose_cue` and `look(camera="camera1")` report it unavailable.
+   Close the gripper on a part (the check script or the RG2 service). Expect `found`/`lost` events naming the pad and the part prim.
 
-## Known limits to say out loud
+5. **Headless.** Close the GUI Isaac, then:
 
-- On sim both pose topics carry the same Isaac truth, so WatchDog's verdicts are independent of the executor's reasoning, not of its perception. Every sample and verdict says `ground_truth`.
-- The ground-truth publisher does not model visibility; "camera2 cannot see the part" never happens on sim until FoundationPose runs there.
-- The registry is still loaded by the WatchDog server for the contract loader and the ACM list (part data, no plan knowledge). Pruning is M7.
+   ```bash
+   ~/isaacsim/python.sh isaac/headless/run_headless.py
+   ```
 
-## What Milestone 6 will do once approved
+   Expect the `[headless] stage ... playing=True server 127.0.0.1:9010` line, then bring the cell up as usual and confirm `/joint_states` and `/clock` flow. Paste any error: the ROS 2 bridge in headless mode is the step most likely to need a tweak (sourcing).
 
-- `isaac/cell_command_server/` inside Kit (Isaac 5.1 API, version-specific calls isolated): `load_layout`, `reset`, `verify_reset`, `reload_stage`, `report_poses`, `health`, `contacts_enable` publishing `/cell/pad_contacts`; `config/layouts/fmb_assembly_2/<name>.yaml` seeded placements.
-- `isaac/headless/`: open `assembly_room.usd` headless, ROS 2 bridge on, command server loaded, play; the GUI workflow kept.
-- `isaac/cameras/`: camera1 on the wrist and camera2 at the table from `config/cameras/sim.yaml` (poses `TODO`), publishing RGB, depth, camera info on the configured topics.
-- Recording per episode: frame recorder start/stop into `records/<episode_id>/frames/`, MCAP bag with `/cell/physical_events`, `/cell/watchdog_notices`, `/cell/executor_facts`, both pose topics; works on hardware without sim time.
+6. **Recording.** With the cell up:
+
+   ```bash
+   python3 -c "
+   import yaml, time, sys; sys.path.insert(0, '.')
+   from cell_platform_interfaces.platform_config import load_platform_config
+   from runner.recorder.episode_recording import EpisodeRecording
+   rec = EpisodeRecording('records/manual_test', load_platform_config(), yaml.safe_load(open('config/cell.yaml'))).start()
+   time.sleep(10); print(rec.stop())"
+   ls records/manual_test records/manual_test/frames/recorder | head
+   ```
+
+   Expect `bag/` with an `.mcap`, about 100 JPEG frames with `frames.jsonl`, and `recording.json`.
+
+7. **camera1** only when its pose and size are in `config/cameras/sim.yaml`: run `isaac/cameras/setup_cameras.py` in the Script Editor and save the stage.
+
+## `TODO(mohammad)` introduced in M6
+
+- `config/layouts/fmb_assembly_2/nominal.yaml`: positions (capture), `verify_tolerances`, jitter.
+- `config/cameras/sim.yaml: camera1` pose, size, `enabled`; `parent_prim` if not the wrist link.
+- Headless ROS 2 bridge sourcing (see `isaac/headless/run_headless.py` docstring).
+- `budgets.*` and `health.*` in `cell.yaml` remain open for M7/M8.
+
+## What Milestone 7 will do once approved
+
+- `docs/PLANNER_CONTRACT.md`; `executor/planner_template/` (stdio MCP server with the single `execute_task` tool, ROS worker over the platform backends and the planning service, fact journal on `/cell/executor_facts`, notices subscription when `consult` is on, Python 3.10); `executor/authoring_mcp/` (`get_task`, `evaluate_planner`, `read_verdict`, `submit_work`); restricted settings and MCP configs per platform; `runner/episode_runner/` (reset, verify, WatchDog session, recording, `execute_task` under budget and wall guard, episode-end notice, acceptance wait, ground-truth checker on sim, `manifest.json`, `verdict.json`, cleanup).

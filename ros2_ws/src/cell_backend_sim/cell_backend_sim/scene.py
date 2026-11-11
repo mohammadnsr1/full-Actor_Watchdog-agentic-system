@@ -106,6 +106,10 @@ class SimScene(SceneBackend):
         response = self.client.call("verify_reset", tolerances=tolerances, layout=layout or {})
         return SceneResult(bool(response.get("ok", False)), detail=str(response.get("error", response.get("detail", ""))), data=response)
 
+    def load_layout(self, assembly: str, layout: str, seed: int, timeout_s: float | None = None) -> SceneResult:
+        response = self.client.call("load_layout", timeout_s=timeout_s, assembly=assembly, layout=layout, seed=int(seed))
+        return SceneResult(bool(response.get("ok", False)), detail=str(response.get("error", response.get("detail", ""))), data=response)
+
     def reload_stage(self, timeout_s: float | None = None) -> SceneResult:
         response = self.client.call("reload_stage", timeout_s=timeout_s)
         return SceneResult(bool(response.get("ok", False)), detail=str(response.get("error", response.get("detail", ""))), data=response)

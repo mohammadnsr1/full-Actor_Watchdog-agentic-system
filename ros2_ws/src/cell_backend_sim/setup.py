@@ -21,6 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "ground_truth_pose_publisher = cell_backend_sim.ground_truth_pose_publisher:main",
+            "pad_contacts_relay = cell_backend_sim.pad_contacts_relay:main",
         ],
     },
 )

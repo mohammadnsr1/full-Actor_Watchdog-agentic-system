@@ -13,7 +13,7 @@ Paths: `W/` = `/home/mohammad/watchdog/WatchDog_V1`, `I/` = `/home/mohammad/full
 | M3 platform backends, names in config, Humble container | (new) | Built and offline-tested 2026-11-10 (see `docs/NEXT_STEPS.md`); awaiting Mohammad's live check and container build. |
 | M4 planning service | v1 M3 | Built and offline-tested (commit `56133b4`): `cell_planner_msgs`, `cell_planning_service` (MoveIt plan-only), `cell_planning_curobo`, `config/cell.yaml`, halt retargeted to the bridge cancel. Mohammad's live check (`docs/NEXT_STEPS.md`, v1 text) has not been reported yet. What v2 adds on top: the halt client must go through the motion backend's cancel (section 5.4 item H1), the 3.10/Humble review in section 5 applies to the three new packages, and the UR-with-RG6 cuRobo robot config is missing. These are finished in M4 after M3 lands. |
 | M5 physical events, plan-blind WatchDog | v1 M4 | Built and offline-tested 2026-11-11; awaiting Mohammad's live check (`docs/NEXT_STEPS.md`). |
-| M6 command server, headless Isaac, sim cameras, recording | v1 M5 | Not started. Sim cameras (camera1 wrist, camera2 table) are new in v2. |
+| M6 command server, headless Isaac, sim cameras, recording | v1 M5 | Written and offline-tested 2026-11-11 (Kit code compiled, not yet run inside Kit); awaiting Mohammad's check. |
 | M7 planner contract, authoring tools, episode runner | v1 M6 | Not started. |
 | M8 supervisor, operations, index | v1 M7 | Not started. |
 
