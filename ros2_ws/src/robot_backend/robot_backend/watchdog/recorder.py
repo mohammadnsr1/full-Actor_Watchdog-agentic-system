@@ -15,8 +15,8 @@ from robot_backend.registry import executor_registry_override, load_registry
 
 from .timebase import wall_ns
 
-JOINT_STATES_TOPIC = "/joint_states"
-EVENTS_TOPIC = "/watchdog/events"
+# Topic names come from the platform config (config/platforms/<platform>.yaml)
+# through robot_backend.cell_config; see _attach_ros. Nothing is named here.
 TF_SAMPLE_HZ = 20.0
 
 # A chain whose own latest TF time lags the freshest chain's by more than this
@@ -229,9 +229,13 @@ def _cell_frame_ids(registry: dict[str, Any]) -> dict[str, dict[str, str]]:
     evidence -- exactly the "conformance from absence of fire" the system
     prompt forbids, forced by a buffering gap rather than chosen.
     """
-    cell = registry.get("cell", {})
-    if not isinstance(cell, dict):
-        return {}
+    # The cell block is a platform value (frames.tcp, frames.world), not a
+    # registry value: robot_backend.cell_config.cell_block builds it in the
+    # registry's shape. The registry argument is kept for the call sites.
+    from robot_backend.cell_config import cell_block
+
+    del registry
+    cell = cell_block()
     base_frame = cell.get("base_frame")
     if not isinstance(base_frame, str) or not base_frame:
         return {}
@@ -352,13 +356,19 @@ class EvidenceRecorder:
         except Exception as exc:
             raise RuntimeError(f"WatchDog recorder ROS imports failed: {exc}") from exc
 
+        from robot_backend.cell_config import topic as _platform_topic
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, node)
         self._subs.append(
-            node.create_subscription(JointState, JOINT_STATES_TOPIC, self._on_joint_state, 100)
+            node.create_subscription(
+                JointState, _platform_topic("joint_states"), self._on_joint_state, 100
+            )
         )
         self._subs.append(
-            node.create_subscription(String, EVENTS_TOPIC, self._on_event_msg, 100)
+            node.create_subscription(
+                String, _platform_topic("watchdog_events"), self._on_event_msg, 100
+            )
         )
         self._timer = node.create_timer(1.0 / TF_SAMPLE_HZ, self._on_tf_timer)
 

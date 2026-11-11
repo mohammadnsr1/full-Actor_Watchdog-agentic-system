@@ -1,0 +1,65 @@
+# Cameras on the Isaac Sim platform.
+#
+# camera1 = wrist camera: feeds ONLY the executor's pose-query service. WatchDog
+#           may take its raw frames with look() and may use its poses only as a
+#           cue through the separate cue tool (Milestone 5), never as evidence.
+# camera2 = table camera: WatchDog's own channel. Its poses are WatchDog's
+#           pose observations.
+#
+# Mohammad's answer to BUILD_PLAN q5: the existing Isaac depth camera is the
+# scene observation camera and becomes camera2; there is no wrist camera in
+# the stage yet. camera1 stays disabled until it is added (Milestone 6, through
+# the Kit MCP bridge), at a pose matched to the hardware wrist calibration.
+
+cameras:
+  camera1:
+    role: wrist
+    enabled: false
+    # TODO(mohammad): wrist mount pose, from the hardware hand-eye calibration
+    # (BUILD_PLAN q1), expressed in the tcp or tool0 frame of the URDF.
+    parent_frame: ""
+    optical_frame: camera1_optical_frame
+    xyz: [0.0, 0.0, 0.0]
+    quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    topics:
+      rgb: /camera1/color/image_raw
+      depth: /camera1/depth/image_raw
+      camera_info: /camera1/color/camera_info
+      poses: /camera1/poses
+    # TODO(mohammad): resolution and FOV matched to the Orbbec Gemini 335Lg
+    # when the prim is created (Milestone 6).
+    width: 0
+    height: 0
+
+  camera2:
+    role: table
+    enabled: true
+    # The existing stage camera. Extrinsics copied from
+    # sim_moveit_bringup/config/cameras.yaml (camera_depth), unchanged.
+    parent_frame: world
+    optical_frame: camera_depth_optical_frame
+    xyz: [0.25, -0.2, 1.7]
+    quat_xyzw: [0.0, 0.99863, -0.05234, 0.0]
+    topics:
+      # The render product's topic names as published on this cell
+      # (robot_backend/watchdog/image_buffer.py, verified live 2026-09-30).
+      rgb: /camera/depth/rgb
+      rgb_compressed: /camera/depth/rgb/compressed
+      depth: /camera/depth/image_raw
+      camera_info: /camera/depth/camera_info
+      camera_info_legacy: /camera_info      # pre-2026-09-30 name, kept as a fallback candidate
+      pointcloud: /camera/depth/points      # dormant: nothing publishes it on the current cell
+      poses: /camera2/poses
+    width: 0      # TODO(mohammad): as set on the render product
+    height: 0
+
+  # Recording-only camera, invisible to both agents (never in an MCP config).
+  recorder:
+    role: recorder
+    enabled: true
+    optical_frame: sim_camera
+    topics:
+      rgb: /recorder_rgb
+      camera_info: /recorder_camera_info
+    width: 1280
+    height: 720

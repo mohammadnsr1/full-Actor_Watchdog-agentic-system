@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from robot_backend.cell_config import platform_use_sim_time as _platform_use_sim_time
 from robot_backend.registry import Registry
 
 _SESSION_ENV = "WATCHDOG_SESSION_DIR"
@@ -360,7 +361,7 @@ def write_manifest(
         "registry_source_sha256": registry_source_sha256,
         "registry_install_matches_source": install_matches_source,
         "clock": {
-            "cell_use_sim_time": True,
+            "cell_use_sim_time": _platform_use_sim_time(),
             "bag_recorder_use_sim_time": False,
             "correlation_field": "recv_timestamp",
             "header_stamp_warning": (

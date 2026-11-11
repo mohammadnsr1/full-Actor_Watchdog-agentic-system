@@ -6,15 +6,23 @@
 # Location: CELL_CONFIG_PATH overrides; otherwise processes walk up from their
 # own file to the repo root (the directory holding config/cell.yaml and ros2_ws/).
 
+# sim | hardware. Selects config/platforms/<platform>.yaml and
+# config/cameras/<platform>.yaml, the only sources of topic, frame, joint,
+# action and service names. CELL_PLATFORM in the environment overrides.
+platform: sim
+
 # record_only: WatchDog never halts, even when a monitor is armed with halt_on_fire.
-# halt_enabled: halts fire. (Read in Milestone 4.)
+# halt_enabled: halts fire. (Read in Milestone 5.)
 mode: record_only
 
 planner:
   # moveit | curobo. The launch file picks the executable from this.
+  # Mohammad's answer (BUILD_PLAN q8): the accelerator's own planner first on
+  # hardware, MoveIt as backup; the same on sim once cuRobo is installed.
   backend: moveit
-  service_namespace: /cell/planning
-  joint_state_topic: /joint_states
+  # Empty = the platform's services.planning_namespace / topics.joint_states.
+  service_namespace: ""
+  joint_state_topic: ""
   # Experimental depth-obstacle layer for the cuRobo backend. Off by default.
   depth_obstacles: false
 
@@ -53,9 +61,12 @@ planner:
     # Robot description: URDF plus XRDF (arm collision spheres come from the XRDF).
     urdf: "robot_description:urdf/ur5e_ros.urdf"
     xrdf: "config/robot/ur5e.xrdf"
-    base_link: base_link
-    ee_link: tcp
-    # RG2 collision spheres, merged on top of the XRDF arm spheres.
+    # Empty = the platform's frames.base / frames.tcp.
+    base_link: ""
+    ee_link: ""
+    # Gripper collision spheres, merged on top of the XRDF arm spheres.
+    # sim: RG2. hardware: TODO(mohammad) config/robot/rg6_collision_spheres.yaml
+    # (and a UR7e XRDF/URDF; see cell_planning_curobo/INSTALL.md).
     rg2_spheres: "config/robot/rg2_collision_spheres.yaml"
     # TODO(mohammad): cuRobo defaults you want to pin (interpolation_dt,
     # collision_activation_distance, num_trajopt_seeds, ...). Empty = library defaults.
@@ -72,9 +83,11 @@ planner:
     joint_limits_file: "ur5e_moveit_config:config/joint_limits.yaml"
     depth:
       # Experimental. Only read when planner.depth_obstacles is true.
-      depth_topic: /camera/depth/image_raw
-      camera_info_topic: /camera/depth/camera_info
-      world_frame: world
+      # Empty = camera2's depth and camera_info topics from config/cameras/<platform>.yaml
+      # and the platform's frames.world.
+      depth_topic: ""
+      camera_info_topic: ""
+      world_frame: ""
       # TODO(mohammad): voxel size (m) and the box (m, in world_frame) the
       # voxel world covers.
       voxel_size_m: 0.0
@@ -83,17 +96,16 @@ planner:
       max_depth_m: 0.0
 
 watchdog:
-  # record_only | halt_enabled  (Milestone 4 reads this; Milestone 3 reads halt.*)
+  # record_only | halt_enabled  (Milestone 5 reads this)
   mode: record_only
   consult: false
   halt:
-    # Cancel-all is sent to every target, in order. The first is the one that
-    # decides `ok`; the rest are extras. The bridge's FollowJointTrajectory
-    # server accepts cancels and returns canceled with no hold published.
-    cancel_targets:
-      - /arm_controller/follow_joint_trajectory/_action/cancel_goal
-      # MoveIt's MoveGroup action, kept as an optional extra for as long as
-      # anything still sends MoveGroup goals. Remove it once nothing does.
+    # The primary cancel target is the platform's motion.cancel_service (the
+    # bridge's FollowJointTrajectory cancel on sim, the UR driver controller's
+    # cancel on hardware); it decides `ok`. Extras below are sent after it.
+    extra_cancel_targets:
+      # MoveIt's MoveGroup action, kept for as long as anything still sends
+      # MoveGroup goals. Remove it once nothing does.
       - /move_action/_action/cancel_goal
     timeout_s: 1.0
 
@@ -110,7 +122,8 @@ health:
 
 recording:
   frames:
-    image_topic: /recorder_rgb
+    # Empty = the `recorder` camera's rgb topic in config/cameras/<platform>.yaml.
+    image_topic: ""
     camera_name: recorder
     rate_hz: 10.0
     jpeg_quality: 95

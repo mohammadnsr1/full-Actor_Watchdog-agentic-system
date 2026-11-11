@@ -92,8 +92,13 @@ class EventBus:
         if node is not None:
             try:
                 from std_msgs.msg import String  # type: ignore[import]
+
+                from robot_backend.cell_config import topic as _platform_topic
+
                 self._String = String
-                self._publisher = node.create_publisher(String, "/watchdog/events", 10)
+                self._publisher = node.create_publisher(
+                    String, _platform_topic("watchdog_events"), 10
+                )
             except Exception as exc:
                 warnings.warn(
                     f"EventBus: ROS publisher creation failed — {exc}. "

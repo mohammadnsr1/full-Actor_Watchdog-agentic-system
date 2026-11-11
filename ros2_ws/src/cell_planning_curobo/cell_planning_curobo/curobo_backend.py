@@ -64,8 +64,8 @@ from cell_planning_service.timing import interpolate_joint_path, load_joint_limi
 from cell_planning_curobo.robot_config import load_robot_config
 from cell_planning_curobo.world import World
 
-SERVICE_SYNC = "/sync_scene_objects"
-SERVICE_GET_SCENE = "/get_planning_scene"
+# Service names come from the node as defaults["services"] (platform config).
+_SERVICE_KEYS = ("sync_scene_objects", "get_planning_scene")
 
 
 class CuRoboBackend(PlanningBackend):
@@ -80,7 +80,7 @@ class CuRoboBackend(PlanningBackend):
         joint_limits_text: str | None,
         planning_frame: str,
         callback_group: Any = None,
-        joint_state_topic: str = "/joint_states",
+        joint_state_topic: str = "",
         depth_layer: Any | None = None,
     ) -> None:
         self.node = node
@@ -94,8 +94,17 @@ class CuRoboBackend(PlanningBackend):
         self.world = World(planning_frame)
         self._world_version_loaded = -1
         kw = {"callback_group": callback_group} if callback_group is not None else {}
-        self._sync = node.create_client(SyncSceneObjects, SERVICE_SYNC, **kw)
-        self._get_scene = node.create_client(GetPlanningScene, SERVICE_GET_SCENE, **kw)
+        services = self.defaults.get("services") or {}
+        missing = [k for k in _SERVICE_KEYS if not services.get(k)]
+        if missing or not joint_state_topic:
+            raise RuntimeError(
+                f"CuRoboBackend needs defaults['services'] {list(_SERVICE_KEYS)} and joint_state_topic "
+                f"(missing: {missing}{', joint_state_topic' if not joint_state_topic else ''}); "
+                "the node fills them from the platform config"
+            )
+        self._svc = {k: str(services[k]) for k in _SERVICE_KEYS}
+        self._sync = node.create_client(SyncSceneObjects, self._svc["sync_scene_objects"], **kw)
+        self._get_scene = node.create_client(GetPlanningScene, self._svc["get_planning_scene"], **kw)
         node.create_subscription(JointState, joint_state_topic, self._on_joint_state, 10, **kw)
         self._init_curobo()
 
@@ -126,8 +135,8 @@ class CuRoboBackend(PlanningBackend):
             self._resolve(str(self.defaults["urdf"])),
             self._resolve(str(self.defaults["xrdf"])),
             self._resolve(str(self.defaults["rg2_spheres"])),
-            str(self.defaults.get("base_link", "base_link")),
-            str(self.defaults.get("ee_link", "tcp")),
+            str(self.defaults["base_link"]),
+            str(self.defaults["ee_link"]),
         )
         self._robot_cfg = robot_cfg
         overrides = dict(self.defaults.get("motion_gen_overrides", {}) or {})
@@ -269,10 +278,10 @@ class CuRoboBackend(PlanningBackend):
     # -- planning ----------------------------------------------------------
 
     def plan_to_pose(self, r: PlanToPoseRequest) -> PlanResult:
-        if not r.tip_link or r.tip_link != str(self.defaults.get("ee_link", "tcp")):
+        if not r.tip_link or r.tip_link != str(self.defaults["ee_link"]):
             raise PlanningFailure(
                 failure_codes.INVALID_REQUEST,
-                f"tip_link must be the configured ee_link {self.defaults.get('ee_link', 'tcp')!r}",
+                f"tip_link must be the configured ee_link {self.defaults['ee_link']!r}",
             )
         self._refresh_world()
         start = self._js(self._start_positions(r.start_state))
@@ -400,10 +409,10 @@ class CuRoboBackend(PlanningBackend):
         stays registry-free while agreeing with MoveIt on what was synced.
         Requires move_group to be running for /get_planning_scene.
         """
-        res = self._call(self._sync, _sync_request(object_ids), SERVICE_SYNC)
+        res = self._call(self._sync, _sync_request(object_ids), self._svc["sync_scene_objects"])
         synced = list(res.synced_object_ids)
         if synced:
-            scene = self._call(self._get_scene, _scene_request(), SERVICE_GET_SCENE).scene
+            scene = self._call(self._get_scene, _scene_request(), self._svc["get_planning_scene"]).scene
             by_id = {o.id: o for o in scene.world.collision_objects}
             for oid in synced:
                 if oid in by_id:

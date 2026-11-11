@@ -1,0 +1,28 @@
+# OnRobot RG6 gripper model for WatchDog (hardware platform).
+#
+# Nothing here is known yet. The RG6 runs through the OnRobot URCap and no
+# ROS 2 driver publishes its state (BUILD_PLAN q3), so WatchDog has no gripper
+# readings on hardware until a telemetry path exists. Fill from the OnRobot
+# RG6 datasheet and the URCap documentation; never estimate.
+
+gripper: rg6
+master_joint: ""          # TODO(mohammad): joint name if the hardware URDF models the fingers
+effort_joint: ""          # TODO(mohammad): none unless a driver publishes effort
+
+# TODO(mohammad): stroke and force ranges from the datasheet.
+width_range_m: [0.0, 0.0]
+force_range_n: [0.0, 0.0]
+
+# TODO(mohammad): finger-tip offset equivalent to the RG2's finger_link_offset_m,
+# if the width reported by the URCap differs from the true tip gap.
+finger_link_offset_m: 0.0
+
+# TODO(mohammad): how a grip is detected, once telemetry exists
+# (URCap "grip detected" flag, motor current, or none).
+contact:
+  source: ""
+  stop_reasons: []
+
+width_table: null         # no calibration table; the URCap reports width directly if at all
+
+effort_units: newton      # when a force reading exists it is in newtons, unlike sim_effort

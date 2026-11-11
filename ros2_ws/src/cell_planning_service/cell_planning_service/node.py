@@ -26,7 +26,7 @@ from rclpy.node import Node
 
 from cell_planning_service.cell_config import load_cell_config, planner_section
 from cell_planning_service.moveit_backend import MoveItBackend
-from cell_planning_service.service_server import DEFAULT_SERVICE_NAMESPACE, PlanningServiceServer
+from cell_planning_service.service_server import PlanningServiceServer
 
 
 def resolve_package_path(spec: str) -> Path:
@@ -68,14 +68,26 @@ class PlanningServiceNode(Node):
                 limits_text = limits_path.read_text(encoding="utf-8")
             else:
                 self.get_logger().warning(f"joint limits file not found: {limits_path}")
-        namespace = str(planner.get("service_namespace", DEFAULT_SERVICE_NAMESPACE))
+        # Names come from the platform config (config/platforms/<platform>.yaml);
+        # planner.service_namespace / planner.joint_state_topic in cell.yaml
+        # override them when set.
+        from cell_platform_interfaces.platform_config import load_platform_config
+
+        platform = load_platform_config(repo_root=path.parent.parent if path else None)
+        namespace = str(planner.get("service_namespace") or platform.service("planning_namespace"))
+        joint_state_topic = str(planner.get("joint_state_topic") or platform.topic("joint_states"))
+        moveit_defaults["services"] = {
+            key: platform.service(key)
+            for key in ("plan_kinematic_path", "compute_cartesian_path", "check_state_validity",
+                        "apply_planning_scene", "sync_scene_objects")
+        }
         group = ReentrantCallbackGroup()
         self.backend = MoveItBackend(
             self,
             defaults=moveit_defaults,
             joint_limits_text=limits_text,
             callback_group=group,
-            joint_state_topic=str(planner.get("joint_state_topic", "/joint_states")),
+            joint_state_topic=joint_state_topic,
         )
         self.server = PlanningServiceServer(
             self, self.backend, namespace=namespace, callback_group=group,

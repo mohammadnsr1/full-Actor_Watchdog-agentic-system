@@ -1,0 +1,44 @@
+# OnRobot RG2 gripper model for WatchDog (sim platform).
+#
+# WatchDog-only copy of the validated RG2 constants. Every number here is
+# copied from ros2_ws/src/isaac_trajectory_bridge/isaac_trajectory_bridge/
+# rg2_controller.py and its launch file, where they were validated. Never
+# re-derive them; if the source changes, copy again and note the commit.
+#
+# Source lines (file as copied at WATCHDOG commit 595ede33):
+#   DEFAULT_OPEN_POSITION           rg2_controller.py:66
+#   DEFAULT_CLOSE_POSITION          rg2_controller.py:67  (launch files override with 0.785398)
+#   DEFAULT_FINGER_LINK_OFFSET_M    rg2_controller.py:72
+#   DEFAULT_EFFORT_NOISE_FLOOR      rg2_controller.py:113
+#   DEFAULT_HARD_FORCE_THRESHOLD    rg2_controller.py:157
+#   DEFAULT_EFFORT_CONTACT_TICKS    rg2_controller.py:163
+#   CONTACT_STOP_REASONS            rg2_controller.py:184
+#   width table                     config/rg2_calibration_table.csv (open_to_close rows)
+
+gripper: rg2
+master_joint: finger_joint
+effort_joint: finger_joint
+
+positions_rad:
+  open: -0.558505
+  close_default: 0.7731809
+  close_launch_override: 0.785398
+
+finger_link_offset_m: 0.021
+
+contact:
+  hard_force_threshold: 0.5
+  effort_noise_floor: 0.03
+  effort_contact_ticks: 3
+  stop_reasons: [force_threshold, effort_plateau]
+
+# Master-joint angle to true finger gap. Read the CSV; do not copy rows here.
+width_table:
+  package: isaac_trajectory_bridge
+  path: config/rg2_calibration_table.csv
+  direction: open_to_close
+
+# Effort units are Isaac joint-drive units on /joint_states, not newtons. The
+# per-part clamp limits in the requirements file use the same units under
+# limits.sim.
+effort_units: sim_effort

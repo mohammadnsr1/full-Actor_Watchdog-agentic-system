@@ -565,3 +565,50 @@ runner/recorder/frame_recorder.py
 runner/run_watchdog.sh
 runner/supervisor/preflight_check.sh
 ```
+
+## Milestone 3 (v2) addendum, 2026-11-10: platform backends, names in config, Humble container
+
+No new files were copied from WATCHDOG. DROIDSTACK was not read for this milestone; the loopback command-server idea credited above is referenced by `cell_backend_sim/scene.py` (client side, written from scratch).
+
+### New files (all written from scratch)
+
+- `config/platforms/sim.yaml`, `config/platforms/hardware.yaml`, `config/cameras/sim.yaml`, `config/cameras/hardware.yaml`, `config/gripper/rg2_kinematics.yaml`, `config/gripper/rg6_kinematics.yaml`, `config/mcp/watchdog.hardware.mcp.json`, `config/settings/watchdog.hardware.settings.json` (byte copy of `config/settings/watchdog.settings.json`).
+- `ros2_ws/src/cell_platform_interfaces/` (package: `platform_config.py`, `compat.py`, `signals.py`, `types.py`, `interfaces.py`, `fjt_motion.py`, `topic_poses.py`, `timebase.py`, `show_platform.py`, tests, README).
+- `ros2_ws/src/cell_backend_sim/` (`motion.py`, `gripper.py`, `poses.py`, `scene.py`, `ground_truth_pose_publisher.py`, test, README).
+- `ros2_ws/src/cell_backend_hw/` (`motion.py`, `gripper.py`, `poses.py`, `scene.py`, test, README).
+- `docker/humble/Dockerfile`, `docker/humble/compose.yaml`, `docker/humble/entrypoint.sh`, `docs/PLATFORMS.md`.
+
+### Value sources
+
+| Value | Source |
+|---|---|
+| Every name in `config/platforms/sim.yaml` | the literals removed from the files in the next table (BUILD_PLAN v2 section 5.1) |
+| `config/cameras/sim.yaml` camera2 extrinsics | `ros2_ws/src/sim_moveit_bringup/config/cameras.yaml` (copied) |
+| `config/cameras/sim.yaml` camera2 topics | `robot_backend/watchdog/image_buffer.py` former `_DEFAULT_*` constants |
+| `config/gripper/rg2_kinematics.yaml` | `isaac_trajectory_bridge/rg2_controller.py` constants and the launch override (copied, lines cited in the file) |
+| `config/platforms/hardware.yaml` driver names | Universal_Robots_ROS2_Driver conventional names, every one marked `TODO(mohammad)` to confirm; camera models from Mohammad (BUILD_PLAN q2) |
+| Everything else in `hardware.yaml`, `cameras/hardware.yaml`, `rg6_kinematics.yaml` | `TODO(mohammad)` |
+
+### WATCHDOG-derived files edited in this milestone (all for rule 10, names from config)
+
+| File | Edit |
+|---|---|
+| `robot_backend/robot_backend/cell_config.py` | platform helpers (`platform`, `topic`, `frame`, `service`, `cell_block`, `watchdog_camera_topics`, `platform_use_sim_time`) |
+| `robot_backend/robot_backend/watchdog/recorder.py` | topic constants removed; subscriptions use the platform topics; `_cell_frame_ids` reads `cell_block()` instead of the registry `cell:` block |
+| `robot_backend/robot_backend/events/bus.py` | event topic from the platform |
+| `robot_backend/robot_backend/cell/gate.py`, `watchdog/ready.py` | gate service names from the platform |
+| `robot_backend/robot_backend/watchdog/image_buffer.py` | the five camera topic constants replaced by `_camera_topics()` (cameras config, camera2); env overrides kept |
+| `robot_backend/robot_backend/watchdog/halt.py` | name literals removed; primary target = platform `motion.cancel_service`; extras from `cell.yaml watchdog.halt.extra_cancel_targets` |
+| `robot_backend/robot_backend/mcp_servers/watchdog_mcp_server.py` | halt construction; new read-only tool `available_evidence_sources`; `get_contract` reports the platform cell block |
+| `robot_backend/robot_backend/vision/observation.py` | observation frame = platform `frames.world` |
+| `robot_backend/robot_backend/contracts/loader.py` | effort joint from `cell_block()` |
+| `robot_backend/robot_backend/watchdog/session.py` | manifest `cell_use_sim_time` from the platform |
+| `robot_backend/package.xml`, `cell_orchestrator/package.xml`, `isaac_trajectory_bridge/package.xml`, `sim_moveit_bringup/package.xml` | dependency on `cell_platform_interfaces` (+ `cell_backend_sim` for the bringup) |
+| `cell_orchestrator/cell_orchestrator/node.py` | service names from parameters, else the platform |
+| `isaac_trajectory_bridge/launch/trajectory_bridge.launch.py` | all names and the RG2 launch targets read from `platforms/sim.yaml`; node files untouched |
+| `sim_moveit_bringup/launch/sim_moveit_bringup.launch.py` | bag topics, world/World static TF, scene-sync service parameters from the platform; `-s mcap` through `compat.bag_record_command`; starts `ground_truth_pose_publisher` (`start_pose_publisher`, default true) |
+| `agents/prompts/watchdog_system_s3.txt` | one tool entry added (`available_evidence_sources`), stating what it returns only |
+| `runner/recorder/frame_recorder.py` | topic from the cameras config `recorder.topics.rgb` when the parameter is empty |
+| `config/cell.yaml` | `platform:`; empty-means-platform for `planner.service_namespace`, `planner.joint_state_topic`, cuRobo `base_link`/`ee_link`, depth topics, recorder topic; `watchdog.halt.extra_cancel_targets` |
+
+Milestone 4 (v1 M3) files edited for the same rule: `cell_planning_service/node.py`, `moveit_backend.py` (service names from `defaults["services"]`), `cell_planning_curobo/node.py`, `curobo_backend.py`, `depth_obstacles.py`.

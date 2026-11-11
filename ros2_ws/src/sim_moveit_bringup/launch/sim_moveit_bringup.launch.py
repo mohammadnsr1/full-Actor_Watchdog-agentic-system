@@ -18,10 +18,24 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+# Every topic, frame and service name below comes from the sim platform
+# config (config/platforms/sim.yaml, config/cameras/sim.yaml), never from
+# this file. Loaded once at launch-description time.
+from cell_platform_interfaces.compat import bag_record_command
+from cell_platform_interfaces.platform_config import load_platform_config
+
+_PLATFORM = load_platform_config("sim")
+
 
 # Core topics recorded on every session. Small (a few MB for a whole run) and
 # the shared correlation axis for the whole record.
-_CORE_BAG_TOPICS = ["/joint_states", "/tf", "/tf_static", "/watchdog/events"]
+def _core_bag_topics() -> list:
+    return [
+        _PLATFORM.topic("joint_states"),
+        _PLATFORM.topic("tf"),
+        _PLATFORM.topic("tf_static"),
+        _PLATFORM.topic("watchdog_events"),
+    ]
 # RGB image topics, recorded only when record_images is true. No throttle layer
 # is added -- the source already publishes slowly (~4.6 Hz); recording the
 # topic directly is correct here.
@@ -37,13 +51,18 @@ _CORE_BAG_TOPICS = ["/joint_states", "/tf", "/tf_static", "/watchdog/events"]
 # used to <session_dir>/frames/ as PNG plus a raw .npy, which is the record that
 # matters for auditing a decision. Add it here only for a run whose whole point
 # is offline depth analysis.
-_IMAGE_BAG_TOPICS = ["/camera/depth/rgb", "/camera/depth/camera_info"]
+def _image_bag_topics() -> list:
+    return [_PLATFORM.camera_topic("camera2", "rgb"), _PLATFORM.camera_topic("camera2", "camera_info")]
+
+
+
 # Point cloud, recorded only when record_pointcloud is true. ~4x the cost of
 # RGB for data a frame-inspecting analyst does not use, so it is off by default.
 # NOTE: nothing publishes this any more (see filter_pointcloud's own note below),
 # so record_pointcloud:=true currently records nothing. The topic name is kept
 # because the cloud path is retained as an option, not removed.
-_POINTCLOUD_BAG_TOPICS = ["/camera/depth/points"]
+def _pointcloud_bag_topics() -> list:
+    return [_PLATFORM.camera_topic("camera2", "pointcloud")]
 
 
 def _is_truthy(value: str) -> bool:
@@ -253,11 +272,13 @@ def _launch_setup(context):
     record_images = _is_truthy(LaunchConfiguration("record_images").perform(context))
     record_pointcloud = _is_truthy(LaunchConfiguration("record_pointcloud").perform(context))
 
-    bag_topics = list(_CORE_BAG_TOPICS)
+    bag_topics = _core_bag_topics()
     if record_images:
-        bag_topics += _IMAGE_BAG_TOPICS
+        bag_topics += _image_bag_topics()
     if record_pointcloud:
-        bag_topics += _POINTCLOUD_BAG_TOPICS
+        bag_topics += _pointcloud_bag_topics()
+    start_pose_publisher = _is_truthy(LaunchConfiguration("start_pose_publisher").perform(context))
+    pose_source = str(_PLATFORM.get("poses", "source"))
 
     # The orchestrator log lives under the session dir unless the operator
     # overrode orchestrator_log_dir explicitly (non-empty).
@@ -355,8 +376,8 @@ def _launch_setup(context):
                 "0",
                 "0",
                 "1",
-                "world",
-                "World",
+                _PLATFORM.frame("world"),
+                _PLATFORM.frame("sim_world"),
             ],
         ),
         IncludeLaunchDescription(
@@ -376,8 +397,34 @@ def _launch_setup(context):
             executable="scene_tf_sync_node",
             name="scene_tf_sync_node",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
+            parameters=[
+                {
+                    "use_sim_time": use_sim_time,
+                    "apply_planning_scene_service": _PLATFORM.service("apply_planning_scene"),
+                    "sync_scene_objects_service": _PLATFORM.service("sync_scene_objects"),
+                    "get_object_pose_service": _PLATFORM.service("get_object_pose"),
+                    "get_object_poses_service": _PLATFORM.service("get_object_poses"),
+                    "reset_tf_service": _PLATFORM.service("reset_tf"),
+                }
+            ],
             condition=IfCondition(launch_scene_sync),
+        ),
+        # Ground-truth object poses on the two camera pose topics (Milestone 3
+        # v2): the sim stand-in for the camera1/camera2 FoundationPose
+        # pipelines, so the executor's pose query and WatchDog's observations
+        # read the same topic contract they will on hardware.
+        *(
+            [
+                Node(
+                    package="cell_backend_sim",
+                    executable="ground_truth_pose_publisher",
+                    name="ground_truth_pose_publisher",
+                    output="screen",
+                    parameters=[{"use_sim_time": use_sim_time}],
+                )
+            ]
+            if start_pose_publisher and pose_source == "ground_truth"
+            else [LogInfo(msg=f"ground_truth_pose_publisher not started (start_pose_publisher={start_pose_publisher}, poses.source={pose_source})")]
         ),
         # The cell's timing interlock. Cell infrastructure, not agent
         # infrastructure -- it comes up with the cell so the monitoring agent
@@ -416,8 +463,10 @@ def _launch_setup(context):
         # recv_timestamp only; message header.stamp is sim time and resets to
         # zero each run (see manifest clock block). Core topics are always
         # recorded; images/pointcloud are opt-in.
+        # Storage is spelled out (-s mcap) because Humble defaults to sqlite3
+        # and Jazzy to mcap; see cell_platform_interfaces.compat.
         ExecuteProcess(
-            cmd=["ros2", "bag", "record", "-o", str(session_dir / "bag"), *bag_topics],
+            cmd=bag_record_command(session_dir / "bag", bag_topics),
             output="screen",
             condition=IfCondition(LaunchConfiguration("record_session")),
         ),
@@ -528,6 +577,14 @@ def generate_launch_description():
                 "use_sim_time",
                 default_value="true",
                 description="Use simulation time from Isaac /clock.",
+            ),
+            DeclareLaunchArgument(
+                "start_pose_publisher",
+                default_value="true",
+                description=(
+                    "Start cell_backend_sim ground_truth_pose_publisher when "
+                    "platforms/sim.yaml poses.source is ground_truth."
+                ),
             ),
             DeclareLaunchArgument(
                 "launch_rviz",
@@ -735,8 +792,8 @@ def generate_launch_description():
                 "record_images",
                 default_value="false",
                 description=(
-                    "Also record RGB camera topics (/camera/depth/rgb, "
-                    "/camera/depth/camera_info) "
+                    "Also record camera2's RGB and camera_info topics "
+                    "(config/cameras/sim.yaml) "
                     "to the session bag. ~180 MB/min. Off by default."
                 ),
             ),

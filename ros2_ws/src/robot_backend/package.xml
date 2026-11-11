@@ -17,6 +17,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>cell_sync_interfaces</exec_depend>
+  <exec_depend>cell_platform_interfaces</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-trimesh-pip</exec_depend>
   <exec_depend>isaac_trajectory_bridge_interfaces</exec_depend>

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cell_backend_sim</name>
+  <version>0.1.0</version>
+  <description>Isaac Sim implementation of the cell_platform_interfaces backends: motion through the Isaac trajectory bridge, gripper through the RG2 controller, poses from the two camera pose topics (fed by simulator truth or, later, sim FoundationPose), scene through the Kit-side command server (Milestone 6). Also the ground_truth_pose_publisher node. Sim only; not built in the Humble container.</description>
+  <maintainer email="mnasr3@asu.edu">Mohammad Nasr</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>cell_platform_interfaces</exec_depend>
+  <exec_depend>isaac_trajectory_bridge_interfaces</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

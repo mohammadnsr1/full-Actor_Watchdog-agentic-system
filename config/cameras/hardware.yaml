@@ -1,0 +1,61 @@
+# Cameras on the hardware platform. Both are Orbbec Gemini 335Lg
+# (model G40055-270; BUILD_PLAN q2).
+#
+# camera1 = wrist camera (already calibrated; calibration data lives on the UR
+#           AI Accelerator, BUILD_PLAN q1). Its FoundationPose runs on the Orin
+#           and feeds /camera1/poses: the executor's pose-query service only.
+# camera2 = table camera, run from the workstation (Humble container); its
+#           FoundationPose feeds /camera2/poses: WatchDog's channel.
+#
+# Topic names below follow the Orbbec ROS 2 driver's usual layout when the
+# driver is launched with camera_name:=camera1 / camera2.
+# TODO(mohammad): confirm against the running driver (`ros2 topic list`) and
+# fill the poses from the calibration files.
+
+cameras:
+  camera1:
+    role: wrist
+    enabled: true
+    model: "Orbbec Gemini 335Lg (G40055-270)"
+    # TODO(mohammad): hand-eye calibration result (camera optical frame in the
+    # tool frame), from the accelerator.
+    parent_frame: ""
+    optical_frame: camera1_color_optical_frame
+    xyz: [0.0, 0.0, 0.0]
+    quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    topics:
+      rgb: /camera1/color/image_raw
+      depth: /camera1/depth/image_raw
+      camera_info: /camera1/color/camera_info
+      poses: /camera1/poses
+    width: 0
+    height: 0
+
+  camera2:
+    role: table
+    enabled: true
+    model: "Orbbec Gemini 335Lg (G40055-270)"
+    # TODO(mohammad): table camera extrinsics in the robot base or world frame
+    # (chessboard calibration; BUILD_PLAN q1).
+    parent_frame: ""
+    optical_frame: camera2_color_optical_frame
+    xyz: [0.0, 0.0, 0.0]
+    quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    topics:
+      rgb: /camera2/color/image_raw
+      depth: /camera2/depth/image_raw
+      camera_info: /camera2/color/camera_info
+      poses: /camera2/poses
+    width: 0
+    height: 0
+
+  # Recording on hardware uses camera2's RGB stream; there is no separate
+  # recorder camera. The frame recorder reads this entry's rgb topic.
+  recorder:
+    role: recorder
+    enabled: true
+    topics:
+      rgb: /camera2/color/image_raw
+      camera_info: /camera2/color/camera_info
+    width: 0
+    height: 0

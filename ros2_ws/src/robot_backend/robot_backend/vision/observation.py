@@ -184,10 +184,13 @@ def _validate_location(
 
     normalised: dict[str, Any] = {}
     if has_world:
+        from robot_backend.cell_config import frame as _platform_frame
+
+        world_frame = _platform_frame("world")
         frame = location.get("frame")
-        if frame != "world":
+        if frame != world_frame:
             raise ValueError(
-                f"location.frame must be 'world' (got {frame!r}); world is the "
+                f"location.frame must be {world_frame!r} (got {frame!r}); it is the "
                 "only frame observations are recorded in."
             )
         for axis in ("x", "y", "z"):
@@ -197,7 +200,7 @@ def _validate_location(
                     f"(got {location.get(axis)!r})."
                 )
         normalised.update(
-            frame="world",
+            frame=world_frame,
             x=float(location["x"]), y=float(location["y"]), z=float(location["z"]),
         )
     if has_pixel:

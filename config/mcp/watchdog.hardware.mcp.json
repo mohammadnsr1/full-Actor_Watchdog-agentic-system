@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "WATCHDOG session MCP config for the HARDWARE platform, run inside the Humble container",
+    "(docker/humble/). Same single-server rule as watchdog.mcp.json: the watchdog server ONLY,",
+    "launched with --strict-mcp-config. Paths are the container's (/cell). CELL_PLATFORM=hardware",
+    "selects config/platforms/hardware.yaml for every name the server uses.",
+    "TODO(mohammad): the hardware requirements file (Milestone 5) replaces the sim task path below."
+  ],
+  "mcpServers": {
+    "robot-backend-watchdog": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "unset VIRTUAL_ENV && source /opt/ros/humble/setup.bash && source /cell/ros2_ws/install/setup.bash && ros2 run robot_backend watchdog_mcp_server"
+      ],
+      "env": {
+        "CELL_PLATFORM": "hardware",
+        "CELL_REPO_ROOT": "/cell",
+        "CELL_CONFIG_PATH": "/cell/config/cell.yaml",
+        "WATCHDOG_TASK_PATH": "/cell/agents/tasks/fmb_assembly_2.watchdog.yaml",
+        "WATCHDOG_SCENARIO": "S3",
+        "WATCHDOG_AGENT_CONFIG": "/cell/agents/config/watchdog_agent_s3.yaml"
+      }
+    }
+  },
+  "_venv_comment": "unset VIRTUAL_ENV is load-bearing for the same reason as in watchdog.mcp.json: the server re-execs into ros2_ws/.venv, which the Dockerfile creates with the container's Python 3.10 and the pinned mcp<2 / numpy<2."
+}

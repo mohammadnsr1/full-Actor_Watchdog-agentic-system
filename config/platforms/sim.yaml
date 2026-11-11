@@ -1,0 +1,135 @@
+# Platform config: Isaac Sim cell (UR5e + OnRobot RG2, ROS 2 Jazzy, Ubuntu 24).
+#
+# Every topic, frame, joint, action and service name used by the shared code
+# comes from this file (or from platforms/hardware.yaml). Code never carries a
+# name literal; a missing key is an error at the point of use, never a
+# fallback. Selected by config/cell.yaml `platform:` or the CELL_PLATFORM env var.
+#
+# Values here are the names the WatchDog cell has used since 2026-09 (see
+# docs/BUILD_PLAN.md section 5.1 for where each one used to live).
+
+platform: sim
+use_sim_time: true
+
+frames:
+  world: world                 # ROS planning frame (MoveIt virtual joint parent)
+  sim_world: World             # Isaac's root prim frame; a static identity TF joins it to `world`
+  base: base_link
+  tcp: tcp                     # fixed TCP link, joined to wrist_3_link (robot_description urdf)
+
+joints:
+  arm:
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint
+  # The RG2's single actuated joint; the other finger joints mimic it, so this
+  # is the only one whose /joint_states effort means anything as a clamp force.
+  gripper_effort: finger_joint
+  gripper_master: finger_joint
+
+topics:
+  clock: /clock
+  joint_states: /joint_states
+  joint_command: /joint_command         # Isaac articulation command (bridge and RG2 controller publish here)
+  tf: /tf
+  tf_static: /tf_static
+  watchdog_events: /watchdog/events
+  physical_events: /cell/physical_events   # Milestone 5
+  watchdog_notices: /cell/watchdog_notices # Milestone 5
+  executor_facts: /cell/executor_facts     # Milestone 7
+  pad_contacts: /cell/pad_contacts         # Milestone 6
+  gripper_width_true: /gripper_width_true  # RG2 controller's true finger gap (sim only)
+
+motion:
+  kind: follow_joint_trajectory
+  controller: isaac_trajectory_bridge
+  action: /arm_controller/follow_joint_trajectory
+  # rclpy's action cancel service for the action above. The bridge accepts
+  # cancels and publishes no hold: the arm stays at the last setpoint sent.
+  cancel_service: /arm_controller/follow_joint_trajectory/_action/cancel_goal
+  publish_rate_hz: 60.0        # matches physxScene:timeStepsPerSecond of the stage
+  goal_tolerance_rad: 0.002
+  goal_time_tolerance_s: 2.0
+
+gripper:
+  kind: rg2
+  kinematics: config/gripper/rg2_kinematics.yaml
+  namespace: /rg2_controller
+  services:
+    open: /rg2_controller/open
+    close: /rg2_controller/close
+    set_position: /rg2_controller/set_position
+  action:
+    guarded_move: /rg2_controller/guarded_move
+  # Launch-time targets in master-joint radians (trajectory_bridge.launch.py).
+  open_position: -0.558505
+  close_position: 0.785398
+  command_duration_s: 1.0
+  command_rate_hz: 50.0
+  # Which readings the platform's gripper backend can supply, and from where.
+  # width: the controller's true finger gap topic (simulator truth).
+  # effort: finger_joint effort on joint_states (simulator joint drive).
+  # grip_detected: only the stop_reason of the last guarded move (a proxy).
+  readings:
+    width: ground_truth
+    effort: joint_state
+    grip_detected: proxy
+
+services:
+  request_go: /cell/request_go
+  signal_ready: /cell/signal_ready
+  planning_namespace: /cell/planning
+  # Executor pose-query channel and registry sync (scene_tf_sync_node).
+  get_object_pose: /get_object_pose
+  get_object_poses: /get_object_poses
+  sync_scene_objects: /sync_scene_objects
+  reset_tf: /reset_tf
+  # MoveIt (move_group) services, used by the planning service and the sync node.
+  apply_planning_scene: /apply_planning_scene
+  get_planning_scene: /get_planning_scene
+  plan_kinematic_path: /plan_kinematic_path
+  compute_cartesian_path: /compute_cartesian_path
+  check_state_validity: /check_state_validity
+  compute_ik: /compute_ik
+  clear_octomap: /clear_octomap
+
+poses:
+  # ground_truth: a cell node converts the Isaac-published object TF into the
+  #               two pose topics below (cell_backend_sim ground_truth_pose_publisher).
+  # foundationpose: the topics are fed by perception (not available yet; see
+  #               BUILD_PLAN question 6).
+  source: ground_truth
+  message: vision_msgs/Detection3DArray
+  executor_topic: /camera1/poses     # camera1 (wrist): executor pose-query service only
+  watchdog_topic: /camera2/poses     # camera2 (table): WatchDog observation only
+  tf_prefix_camera1: cam1
+  tf_prefix_camera2: cam2
+  publish_rate_hz: 20.0
+  # Object id -> TF frame mapping for ground_truth mode comes from the registry
+  # (objects[].tf_frame, lookup_frame); it is not repeated here.
+
+scene:
+  backend: isaac_command_server      # Milestone 6; until then reset/verify report unavailable
+  host: 127.0.0.1
+  # TODO(mohammad): loopback port for the Kit-side command server (Milestone 6).
+  port: 0
+
+# Signal availability. Read by the physical-events node (Milestone 5) and
+# exposed read-only to WatchDog through available_evidence_sources().
+#   available  : the signal exists with its native meaning
+#   proxy      : something correlated stands in for it (named in `source`)
+#   missing    : nothing provides it on this platform; nothing is published for it
+signals:
+  finger_effort:   {status: available, source: joint_state}
+  gripper_width:   {status: available, source: ground_truth}
+  grip_detected:   {status: proxy,     source: guarded_move_stop_reason}
+  pad_contacts:    {status: missing,   source: contact_report}   # becomes available with Milestone 6 contacts_enable
+  part_poses:      {status: available, source: ground_truth}     # follows poses.source
+  robot_tf:        {status: available, source: robot_state_publisher}
+  sim_time:        {status: available, source: clock}
+  camera1_frames:  {status: missing,   source: camera1}          # no wrist camera in the stage yet (BUILD_PLAN q5)
+  camera2_frames:  {status: available, source: camera2}
+  camera2_depth:   {status: available, source: camera2}

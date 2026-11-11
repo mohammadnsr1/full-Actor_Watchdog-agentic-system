@@ -1,0 +1,133 @@
+# Platform config: real UR cell (UR7e + OnRobot RG6) on the UR AI Accelerator
+# (Jetson Orin, Ubuntu 22, ROS 2 Humble), WatchDog and camera2 on the
+# workstation in the Humble container (docker/humble/).
+#
+# Same keys as platforms/sim.yaml. Every value marked TODO(mohammad) is unknown
+# and must be filled before the code that reads it runs; nothing is invented.
+# Names shown as "driver default" are the Universal_Robots_ROS2_Driver's usual
+# names and still need confirming against the installed branch (BUILD_PLAN q4).
+
+platform: hardware
+use_sim_time: false
+
+frames:
+  world: world
+  base: base_link
+  # TODO(mohammad): the TCP frame on the hardware URDF (tool0 from the UR
+  # description, or a tcp link added for the RG6). Must match the planner's
+  # tip link and the WatchDog relative-frame monitors.
+  tcp: ""
+
+joints:
+  arm:
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint
+  # No gripper joint is published by the UR driver; the RG6 runs through the
+  # OnRobot URCap. Left empty on purpose: finger_effort is `missing` below.
+  gripper_effort: ""
+  gripper_master: ""
+
+topics:
+  clock: ""                       # no sim clock on hardware
+  joint_states: /joint_states
+  joint_command: ""               # not used on hardware
+  tf: /tf
+  tf_static: /tf_static
+  watchdog_events: /watchdog/events
+  physical_events: /cell/physical_events
+  watchdog_notices: /cell/watchdog_notices
+  executor_facts: /cell/executor_facts
+  pad_contacts: ""                # not available on hardware
+  gripper_width_true: ""          # not available on hardware
+  # UR driver URScript injection topic (std_msgs/String), used by the RG6
+  # URCap transport. Driver default shown; TODO(mohammad): confirm.
+  urscript_command: /urscript_interface/script_command
+
+motion:
+  kind: follow_joint_trajectory
+  controller: ur_robot_driver
+  # TODO(mohammad): confirm the controller on the installed driver branch:
+  # scaled_joint_trajectory_controller (driver default, respects the pendant
+  # speed slider) or joint_trajectory_controller.
+  action: /scaled_joint_trajectory_controller/follow_joint_trajectory
+  cancel_service: /scaled_joint_trajectory_controller/follow_joint_trajectory/_action/cancel_goal
+  # TODO(mohammad): value from the controller config on the accelerator.
+  goal_tolerance_rad: 0.0
+  goal_time_tolerance_s: 0.0
+  # Driver status topics (driver defaults; TODO(mohammad): confirm).
+  robot_mode_topic: /io_and_status_controller/robot_mode
+  safety_mode_topic: /io_and_status_controller/safety_mode
+  robot_program_running_topic: /io_and_status_controller/robot_program_running
+
+gripper:
+  kind: rg6
+  kinematics: config/gripper/rg6_kinematics.yaml
+  # Transport: urscript (OnRobot URCap functions sent through the UR driver's
+  # script topic). No ROS 2 RG6 driver is installed (BUILD_PLAN q3).
+  transport: urscript
+  # TODO(mohammad): the URCap function names and argument order for grip and
+  # release, from the OnRobot URCap manual installed on the pendant.
+  urscript:
+    grip_function: ""
+    release_function: ""
+    tool_index: 0
+  # TODO(mohammad): RG6 width and force ranges from the OnRobot datasheet.
+  width_range_m: [0.0, 0.0]
+  force_range_n: [0.0, 0.0]
+  # Readings: the URCap path gives no feedback over ROS 2 today.
+  readings:
+    width: missing
+    effort: missing
+    grip_detected: missing
+
+services:
+  request_go: /cell/request_go
+  signal_ready: /cell/signal_ready
+  planning_namespace: /cell/planning
+  get_object_pose: /get_object_pose
+  get_object_poses: /get_object_poses
+  sync_scene_objects: /sync_scene_objects
+  reset_tf: /reset_tf
+  # MoveIt on hardware is backup only (BUILD_PLAN q8). Names apply only when a
+  # Humble move_group runs for the UR7e; TODO(mohammad): confirm or leave.
+  apply_planning_scene: /apply_planning_scene
+  get_planning_scene: /get_planning_scene
+  plan_kinematic_path: /plan_kinematic_path
+  compute_cartesian_path: /compute_cartesian_path
+  check_state_validity: /check_state_validity
+  compute_ik: /compute_ik
+  clear_octomap: /clear_octomap
+
+poses:
+  # foundationpose: camera1 FoundationPose on the Orin feeds executor_topic;
+  # camera2 FoundationPose on the workstation feeds watchdog_topic. Neither
+  # pipeline exists yet (BUILD_PLAN q6); until then both topics are silent and
+  # every pose reading is missing evidence.
+  source: foundationpose
+  message: vision_msgs/Detection3DArray
+  executor_topic: /camera1/poses
+  watchdog_topic: /camera2/poses
+  tf_prefix_camera1: cam1
+  tf_prefix_camera2: cam2
+
+scene:
+  backend: operator                 # reset = ask the operator and wait for confirmation
+  # TODO(mohammad): how the operator confirms (terminal prompt on the runner
+  # host is the scaffold's default).
+  confirm: terminal
+
+signals:
+  finger_effort:   {status: missing,   source: gripper_driver}
+  gripper_width:   {status: missing,   source: gripper_driver}
+  grip_detected:   {status: missing,   source: gripper_driver}
+  pad_contacts:    {status: missing,   source: contact_report}
+  part_poses:      {status: missing,   source: camera2_pose}    # becomes available when camera2 FoundationPose runs
+  robot_tf:        {status: available, source: robot_state_publisher}
+  sim_time:        {status: missing,   source: clock}
+  camera1_frames:  {status: available, source: camera1}
+  camera2_frames:  {status: available, source: camera2}
+  camera2_depth:   {status: available, source: camera2}

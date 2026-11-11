@@ -43,7 +43,7 @@ class DepthObstacleLayer:
         self.bounds_min = np.array(self.settings.get("bounds_min", [0, 0, 0]), dtype=float)
         self.bounds_max = np.array(self.settings.get("bounds_max", [0, 0, 0]), dtype=float)
         self.max_depth = float(self.settings.get("max_depth_m", 0.0))
-        self.world_frame = str(self.settings.get("world_frame", "world"))
+        self.world_frame = str(self.settings["world_frame"])  # filled by the node from the platform frames
         if self.voxel_size <= 0 or self.max_depth <= 0 or np.all(self.bounds_max <= self.bounds_min):
             raise RuntimeError(
                 "depth obstacles enabled but planner.curobo.depth voxel_size_m, max_depth_m, "

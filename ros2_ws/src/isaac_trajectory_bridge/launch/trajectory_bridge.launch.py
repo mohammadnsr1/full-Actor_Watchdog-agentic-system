@@ -4,6 +4,13 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+# Names (joints, topics, action, gripper services) come from the sim platform
+# config, config/platforms/sim.yaml, never from this file. The RG2 targets
+# below are validated controller constants, not names, and stay as arguments.
+from cell_platform_interfaces.platform_config import load_platform_config
+
+_PLATFORM = load_platform_config("sim")
+
 
 def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -15,6 +22,9 @@ def generate_launch_description() -> LaunchDescription:
     rg2_command_rate_hz = LaunchConfiguration("rg2_command_rate_hz")
     goal_tolerance = LaunchConfiguration("goal_tolerance")
     goal_time_tolerance_sec = LaunchConfiguration("goal_time_tolerance_sec")
+
+    motion = _PLATFORM.section("motion")
+    gripper = _PLATFORM.section("gripper")
 
     return LaunchDescription(
         [
@@ -28,8 +38,8 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="false",
                 description=(
                     "false = publish only the configured arm joints to "
-                    "/joint_command; true = publish all joints from /joint_states "
-                    "while overwriting the arm joints, which should only be used if "
+                    "the joint command topic; true = publish all joints from the joint "
+                    "state topic while overwriting the arm joints, which should only be used if "
                     "Isaac requires full-articulation commands and gripper "
                     "preservation is known safe."
                 ),
@@ -41,27 +51,27 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "rg2_open_position",
-                default_value="-0.558505",
-                description="Default RG2 open target in master joint radians for finger_joint.",
+                default_value=str(gripper.get("open_position", "")),
+                description="Default RG2 open target in master joint radians (platforms/sim.yaml gripper.open_position).",
             ),
             DeclareLaunchArgument(
                 "rg2_close_position",
-                default_value="0.785398",
-                description="Default RG2 close target in master joint radians for finger_joint.",
+                default_value=str(gripper.get("close_position", "")),
+                description="Default RG2 close target in master joint radians (platforms/sim.yaml gripper.close_position).",
             ),
             DeclareLaunchArgument(
                 "rg2_command_duration_sec",
-                default_value="1.0",
+                default_value=str(gripper.get("command_duration_s", "")),
                 description="Duration in seconds for RG2 gripper interpolation commands.",
             ),
             DeclareLaunchArgument(
                 "rg2_command_rate_hz",
-                default_value="50.0",
+                default_value=str(gripper.get("command_rate_hz", "")),
                 description="Publish rate in Hz for RG2 gripper interpolation commands.",
             ),
             DeclareLaunchArgument(
                 "goal_tolerance",
-                default_value="0.002",
+                default_value=str(motion.get("goal_tolerance_rad", "")),
                 description=(
                     "Per-joint acceptance band in radians for the final "
                     "trajectory point -- a gross-failure detector, NOT the "
@@ -76,7 +86,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "goal_time_tolerance_sec",
-                default_value="2.0",
+                default_value=str(motion.get("goal_time_tolerance_s", "")),
                 description=(
                     "Seconds past the trajectory's final timestamp that the "
                     "bridge keeps holding the last setpoint while waiting for "
@@ -93,20 +103,13 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
                 parameters=[
                     {
-                        "joint_names": [
-                            "shoulder_pan_joint",
-                            "shoulder_lift_joint",
-                            "elbow_joint",
-                            "wrist_1_joint",
-                            "wrist_2_joint",
-                            "wrist_3_joint",
-                        ],
-                        "joint_command_topic": "/joint_command",
-                        "joint_state_topic": "/joint_states",
-                        "action_name": "/arm_controller/follow_joint_trajectory",
+                        "joint_names": _PLATFORM.joints("arm"),
+                        "joint_command_topic": _PLATFORM.topic("joint_command"),
+                        "joint_state_topic": _PLATFORM.topic("joint_states"),
+                        "action_name": str(_PLATFORM.get("motion", "action")),
                         # Matches physxScene:timeStepsPerSecond in the Isaac
                         # stage; a mismatch beats against the physics loop.
-                        "publish_rate_hz": 60.0,
+                        "publish_rate_hz": float(_PLATFORM.get("motion", "publish_rate_hz")),
                         "goal_tolerance": goal_tolerance,
                         "goal_time_tolerance_sec": goal_time_tolerance_sec,
                         "require_joint_state_before_execute": True,
@@ -124,9 +127,9 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[
                     {
                         "use_sim_time": use_sim_time,
-                        "joint_state_topic": "/joint_states",
-                        "joint_command_topic": "/joint_command",
-                        "service_namespace": "/rg2_controller",
+                        "joint_state_topic": _PLATFORM.topic("joint_states"),
+                        "joint_command_topic": _PLATFORM.topic("joint_command"),
+                        "service_namespace": str(_PLATFORM.get("gripper", "namespace")),
                         "open_position": rg2_open_position,
                         "close_position": rg2_close_position,
                         "command_duration_sec": rg2_command_duration_sec,

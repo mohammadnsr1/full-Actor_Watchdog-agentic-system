@@ -6,8 +6,11 @@ targets are extras and only add to the detail. Nothing is published to
 replace the cancelled motion: the bridge's FollowJointTrajectory server
 returns `canceled` and leaves the arm at the last setpoint it already sent.
 
-Targets come from config/cell.yaml `watchdog.halt.cancel_targets` through
-the caller; the default here is the bridge alone.
+The primary target is the motion backend's cancel service from the platform
+config (`motion.cancel_service`: the bridge's cancel on sim, the UR driver's
+trajectory-controller cancel on hardware). Extras come from config/cell.yaml
+`watchdog.halt.extra_cancel_targets` (for example MoveIt's /move_action
+cancel). No name is written in this file.
 """
 
 from __future__ import annotations
@@ -18,9 +21,12 @@ from typing import Any, Sequence
 
 from robot_backend.events.schema import HaltPayload, make_event
 
-BRIDGE_CANCEL_SERVICE = "/arm_controller/follow_joint_trajectory/_action/cancel_goal"
-MOVE_GROUP_CANCEL_SERVICE = "/move_action/_action/cancel_goal"
-DEFAULT_CANCEL_TARGETS: tuple[str, ...] = (BRIDGE_CANCEL_SERVICE,)
+
+def default_cancel_targets() -> tuple[str, ...]:
+    """The platform's motion cancel service, alone."""
+    from robot_backend.cell_config import platform
+
+    return (str(platform().get("motion", "cancel_service")),)
 
 
 class HaltClient:
@@ -38,7 +44,7 @@ class HaltClient:
         self.event_bus = event_bus
         self._callback_group = callback_group
         self.timeout_sec = timeout_sec
-        targets = [t.strip() for t in (cancel_targets or DEFAULT_CANCEL_TARGETS) if t and t.strip()]
+        targets = [t.strip() for t in (cancel_targets or default_cancel_targets()) if t and t.strip()]
         if not targets:
             raise ValueError("HaltClient needs at least one cancel target")
         self.cancel_targets: tuple[str, ...] = tuple(targets)

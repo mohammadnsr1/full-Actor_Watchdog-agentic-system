@@ -68,11 +68,27 @@ from cell_planning_service.timing import (
     time_parameterize,
 )
 
-SERVICE_PLAN = "/plan_kinematic_path"
-SERVICE_CARTESIAN = "/compute_cartesian_path"
-SERVICE_VALIDITY = "/check_state_validity"
-SERVICE_APPLY_SCENE = "/apply_planning_scene"
-SERVICE_SYNC = "/sync_scene_objects"
+# MoveIt service names are supplied by the node from the platform config as
+# defaults["services"] (keys below). None is written here.
+_SERVICE_KEYS = (
+    "plan_kinematic_path",
+    "compute_cartesian_path",
+    "check_state_validity",
+    "apply_planning_scene",
+    "sync_scene_objects",
+)
+
+
+def _service_names(defaults: dict[str, Any]) -> dict[str, str]:
+    services = defaults.get("services") or {}
+    missing = [k for k in _SERVICE_KEYS if not services.get(k)]
+    if missing:
+        raise RuntimeError(
+            "MoveItBackend needs defaults['services'] with "
+            + ", ".join(_SERVICE_KEYS)
+            + f" (missing: {missing}); the node fills them from the platform config"
+        )
+    return {k: str(services[k]) for k in _SERVICE_KEYS}
 
 
 class MoveItBackend(PlanningBackend):
@@ -85,10 +101,12 @@ class MoveItBackend(PlanningBackend):
         defaults: dict[str, Any],
         joint_limits_text: str | None,
         callback_group: Any = None,
-        joint_state_topic: str = "/joint_states",
+        joint_state_topic: str = "",
     ) -> None:
         """
-        defaults: the `planner.moveit` mapping from config/cell.yaml. Keys used:
+        joint_state_topic: required; the node passes the platform's topics.joint_states.
+        defaults: the `planner.moveit` mapping from config/cell.yaml plus
+            `services` (the five MoveIt/sync service names, from the platform). Keys used:
             allowed_planning_time_s, num_planning_attempts, position_tolerance_m,
             orientation_tolerance_rad, joint_tolerance_rad, eef_step_m,
             jump_threshold, check_resolution_rad, service_timeout_s,
@@ -96,6 +114,8 @@ class MoveItBackend(PlanningBackend):
         joint_limits_text: contents of a MoveIt joint_limits.yaml, used only
             when the Cartesian service returns an untimed path.
         """
+        if not joint_state_topic:
+            raise RuntimeError("MoveItBackend needs joint_state_topic (platform topics.joint_states)")
         self.node = node
         self.defaults = dict(defaults or {})
         self.joint_limits_text = joint_limits_text
@@ -104,11 +124,12 @@ class MoveItBackend(PlanningBackend):
         self._joint_state: JointState | None = None
         self._joint_state_wall: float = 0.0
         kw = {"callback_group": callback_group} if callback_group is not None else {}
-        self._plan = node.create_client(GetMotionPlan, SERVICE_PLAN, **kw)
-        self._cartesian = node.create_client(GetCartesianPath, SERVICE_CARTESIAN, **kw)
-        self._validity = node.create_client(GetStateValidity, SERVICE_VALIDITY, **kw)
-        self._apply = node.create_client(ApplyPlanningScene, SERVICE_APPLY_SCENE, **kw)
-        self._sync = node.create_client(SyncSceneObjects, SERVICE_SYNC, **kw)
+        self._svc = _service_names(self.defaults)
+        self._plan = node.create_client(GetMotionPlan, self._svc["plan_kinematic_path"], **kw)
+        self._cartesian = node.create_client(GetCartesianPath, self._svc["compute_cartesian_path"], **kw)
+        self._validity = node.create_client(GetStateValidity, self._svc["check_state_validity"], **kw)
+        self._apply = node.create_client(ApplyPlanningScene, self._svc["apply_planning_scene"], **kw)
+        self._sync = node.create_client(SyncSceneObjects, self._svc["sync_scene_objects"], **kw)
         self._joint_sub = node.create_subscription(
             JointState, joint_state_topic, self._on_joint_state, 10, **kw
         )
@@ -200,7 +221,7 @@ class MoveItBackend(PlanningBackend):
     def _submit(self, req: MotionPlanRequest) -> JointTrajectory:
         srv = GetMotionPlan.Request()
         srv.motion_plan_request = req
-        res = self._call(self._plan, srv, SERVICE_PLAN).motion_plan_response
+        res = self._call(self._plan, srv, self._svc["plan_kinematic_path"]).motion_plan_response
         code = int(res.error_code.val)
         if code != 1:
             raise PlanningFailure(failure_codes.from_moveit(code), f"MoveItErrorCodes {code}")
@@ -285,7 +306,7 @@ class MoveItBackend(PlanningBackend):
         srv.max_acceleration_scaling_factor = (
             r.max_acceleration_scaling if 0 < r.max_acceleration_scaling <= 1 else 1.0
         )
-        res = self._call(self._cartesian, srv, SERVICE_CARTESIAN)
+        res = self._call(self._cartesian, srv, self._svc["compute_cartesian_path"])
         code = int(res.error_code.val)
         if code != 1:
             raise PlanningFailure(failure_codes.from_moveit(code), f"MoveItErrorCodes {code}")
@@ -339,7 +360,7 @@ class MoveItBackend(PlanningBackend):
             srv.group_name = r.planning_group
             srv.robot_state.joint_state.name = list(traj.joint_names)
             srv.robot_state.joint_state.position = q
-            res = self._call(self._validity, srv, SERVICE_VALIDITY)
+            res = self._call(self._validity, srv, self._svc["check_state_validity"])
             if not res.valid:
                 contacts = sorted({f"{c.contact_body_1}|{c.contact_body_2}" for c in res.contacts})
                 return CheckResult(valid=False, first_invalid_index=index, contacts=contacts)
@@ -353,7 +374,7 @@ class MoveItBackend(PlanningBackend):
         scene.is_diff = True
         scene.world.collision_objects = [obj]
         srv.scene = scene
-        res = self._call(self._apply, srv, SERVICE_APPLY_SCENE)
+        res = self._call(self._apply, srv, self._svc["apply_planning_scene"])
         return WorldResult(ok=bool(res.success), message="" if res.success else "apply_planning_scene refused")
 
     def add_collision_object(self, obj: CollisionObject) -> WorldResult:
@@ -375,7 +396,7 @@ class MoveItBackend(PlanningBackend):
     def sync_collision_objects(self, object_ids: list[str]) -> WorldResult:
         srv = SyncSceneObjects.Request()
         srv.object_ids = list(object_ids)
-        res = self._call(self._sync, srv, SERVICE_SYNC)
+        res = self._call(self._sync, srv, self._svc["sync_scene_objects"])
         return WorldResult(
             ok=bool(res.success),
             message=str(res.message),

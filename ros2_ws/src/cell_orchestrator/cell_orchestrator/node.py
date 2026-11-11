@@ -160,6 +160,10 @@ class OrchestratorNode(Node):
         self.declare_parameter("gate_timeout_sec", _DEFAULT_GATE_TIMEOUT_SEC)
         self.declare_parameter("log_dir", str(_DEFAULT_LOG_DIR))
         self.declare_parameter("guard_mode", _DEFAULT_GUARD_MODE)
+        # Service names: empty means "from the platform config"
+        # (config/platforms/<platform>.yaml services.request_go / signal_ready).
+        self.declare_parameter("request_go_service", "")
+        self.declare_parameter("signal_ready_service", "")
         self._default_gate_timeout_sec = float(
             self.get_parameter("gate_timeout_sec").value
         )
@@ -213,16 +217,25 @@ class OrchestratorNode(Node):
         # the release.
         cb_group = ReentrantCallbackGroup()
 
+        request_go_name = str(self.get_parameter("request_go_service").value).strip()
+        signal_ready_name = str(self.get_parameter("signal_ready_service").value).strip()
+        if not request_go_name or not signal_ready_name:
+            from cell_platform_interfaces.platform_config import load_platform_config
+
+            platform = load_platform_config()
+            request_go_name = request_go_name or platform.service("request_go")
+            signal_ready_name = signal_ready_name or platform.service("signal_ready")
+
         self.create_service(
-            RequestGo, "/cell/request_go", self._handle_request_go, callback_group=cb_group
+            RequestGo, request_go_name, self._handle_request_go, callback_group=cb_group
         )
         self.create_service(
-            SignalReady, "/cell/signal_ready", self._handle_signal_ready, callback_group=cb_group
+            SignalReady, signal_ready_name, self._handle_signal_ready, callback_group=cb_group
         )
 
         self.get_logger().info(
-            f"cell_orchestrator up; serving /cell/request_go and "
-            f"/cell/signal_ready; default gate_timeout_sec="
+            f"cell_orchestrator up; serving {request_go_name} and "
+            f"{signal_ready_name}; default gate_timeout_sec="
             f"{self._default_gate_timeout_sec}; guard_mode="
             f"{self._get_guard_mode()}; log at {self._log_path}"
         )

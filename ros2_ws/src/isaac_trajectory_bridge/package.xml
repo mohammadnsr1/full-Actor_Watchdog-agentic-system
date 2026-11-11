@@ -8,6 +8,7 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
 
+  <depend>cell_platform_interfaces</depend>
   <depend>control_msgs</depend>
   <depend>isaac_trajectory_bridge_interfaces</depend>
   <depend>launch</depend>

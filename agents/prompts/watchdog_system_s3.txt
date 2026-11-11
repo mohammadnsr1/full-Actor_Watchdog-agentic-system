@@ -82,6 +82,11 @@ available_event_types()
     event_types filters. Filter names must match exactly; a filter naming a
     type that does not exist is rejected.
 
+available_evidence_sources()
+    Which physical signals exist on this platform, each marked available,
+    proxy, or missing, with the source each comes from, plus the cameras and
+    their roles. A missing signal is never published and never estimated.
+
 get_contract(object_id) -> contract, raw_spec, acm_allowed_object_pairs,
                           cell, object_frames
     Covers only the objects and frames registered for this cell; it

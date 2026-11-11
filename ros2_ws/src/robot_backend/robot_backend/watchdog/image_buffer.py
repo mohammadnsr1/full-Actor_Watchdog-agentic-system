@@ -52,10 +52,17 @@ from .timebase import wall_ns
 # is 4 bytes per pixel and would evict colour frames from a shared byte budget.
 # Override with a comma-separated WATCHDOG_IMAGE_TOPICS to point at a different
 # camera.
-_DEFAULT_IMAGE_TOPIC_CANDIDATES = (
-    "/camera/depth/rgb",
-    "/camera/depth/rgb/compressed",
-)
+#
+# Since Milestone 3 (v2) the names are NOT here: they come from
+# config/cameras/<platform>.yaml for WatchDog's camera (camera2) through
+# robot_backend.cell_config.watchdog_camera_topics(). The env overrides
+# below still win when set.
+
+
+def _camera_topics() -> dict:
+    from robot_backend.cell_config import watchdog_camera_topics
+
+    return watchdog_camera_topics()
 
 # The remaining camera streams look() reads. Every one of these is optional and a
 # missing topic degrades a view, never the process -- see CameraStreams.attach.
@@ -63,7 +70,7 @@ _DEFAULT_IMAGE_TOPIC_CANDIDATES = (
 # Live on this cell as of 2026-09-30: /camera/depth/rgb, /camera/depth/image_raw,
 # /camera/depth/camera_info. The POINT CLOUD is NOT published any more, so the
 # projection fallback below never runs here -- see _DEFAULT_POINTCLOUD_TOPIC.
-_DEFAULT_DEPTH_IMAGE_TOPIC = "/camera/depth/image_raw"
+# (depth topic: cameras config `camera2.topics.depth`)
 # Two candidates in priority order, because this cell has used two names.
 # "/camera/depth/camera_info" is what the render product publishes now (verified
 # live 2026-09-30) and is the one that will be picked. "/camera_info" (global,
@@ -71,10 +78,8 @@ _DEFAULT_DEPTH_IMAGE_TOPIC = "/camera/depth/image_raw"
 # _IMAGE_BAG_TOPICS, and is kept here so an un-updated stage still resolves.
 # First one present wins; subscribing to both would double-fill one slot from
 # two sources with no way to say which intrinsics were used.
-_DEFAULT_CAMERA_INFO_TOPICS = (
-    "/camera/depth/camera_info",
-    "/camera_info",
-)
+# (camera_info candidates: cameras config `camera2.topics.camera_info`, then
+# `camera_info_legacy`)
 # Kept in step with sim_moveit_bringup/config/cameras.yaml's pointcloud_topic.
 # Not read from that file: this process has no launch context and the yaml lives
 # in a different package's share directory. Override with the env var below if
@@ -88,7 +93,7 @@ _DEFAULT_CAMERA_INFO_TOPICS = (
 # deliberately as the fallback if /camera/depth/image_raw ever regresses. It is
 # consequently UNEXERCISED code: treat project_cloud_to_depth and cloud_xyz as
 # unverified against a real message until a cloud is republished.
-_DEFAULT_POINTCLOUD_TOPIC = "/camera/depth/points"
+# (pointcloud topic: cameras config `camera2.topics.pointcloud`)
 
 # How old the latest message of a stream may be, on the wall_ns receipt axis,
 # before look() calls that view stale. One second is long for a 5-30 Hz camera
@@ -189,7 +194,7 @@ def _candidate_topics_from_env() -> tuple[str, ...]:
     raw = os.environ.get("WATCHDOG_IMAGE_TOPICS")
     if raw and raw.strip():
         return tuple(t.strip() for t in raw.split(",") if t.strip())
-    return _DEFAULT_IMAGE_TOPIC_CANDIDATES
+    return tuple(_camera_topics()["rgb"])
 
 
 def _base_stream(topic: str) -> str:
@@ -425,7 +430,7 @@ class CameraStreams:
         self._depth: _Latest | None = None
         self._info: _Latest | None = None
         self._info_topic: str | None = None
-        self._info_preferred: str = _DEFAULT_CAMERA_INFO_TOPICS[0]
+        self._info_preferred: str = ""  # set in attach from the cameras config
         self._cloud: _Latest | None = None
         self._subs: list[Any] = []
         self.subscribed_topics: list[str] = []
@@ -560,8 +565,9 @@ class CameraStreams:
                     ("rgb", topic, Image, functools.partial(self._on_rgb_msg, topic=topic))
                 )
 
-        depth_topic = os.environ.get("WATCHDOG_DEPTH_IMAGE_TOPIC", _DEFAULT_DEPTH_IMAGE_TOPIC)
-        cloud_topic = os.environ.get("WATCHDOG_POINTCLOUD_TOPIC", _DEFAULT_POINTCLOUD_TOPIC)
+        cam_topics = _camera_topics()
+        depth_topic = os.environ.get("WATCHDOG_DEPTH_IMAGE_TOPIC") or cam_topics["depth"]
+        cloud_topic = os.environ.get("WATCHDOG_POINTCLOUD_TOPIC") or cam_topics["pointcloud"]
         wanted.append((
             "depth", depth_topic, Image,
             functools.partial(self._on_depth, topic=depth_topic),
@@ -617,7 +623,7 @@ class CameraStreams:
         override = os.environ.get("WATCHDOG_CAMERA_INFO_TOPIC")
         if override and override.strip():
             return (override.strip(),)
-        return tuple(_DEFAULT_CAMERA_INFO_TOPICS)
+        return tuple(_camera_topics()["camera_info"])
 
     # Queue depth 1 on every subscription above: this is a latest-only store, so
     # a backlog would only ever be frames it is about to discard.

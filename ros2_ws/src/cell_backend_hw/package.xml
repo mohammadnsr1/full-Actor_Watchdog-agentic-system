@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cell_backend_hw</name>
+  <version>0.1.0</version>
+  <description>Hardware implementation (scaffold) of the cell_platform_interfaces backends for the UR cell on the UR AI Accelerator: motion through the UR ROS 2 driver's trajectory controller, gripper through the OnRobot RG6 URCap over URScript (no readings over ROS 2 yet), poses from /camera1/poses and /camera2/poses, scene reset by operator confirmation. Every unknown is a TODO(mohammad) in config/platforms/hardware.yaml. Python 3.10 / ROS 2 Humble.</description>
+  <maintainer email="mnasr3@asu.edu">Mohammad Nasr</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>cell_platform_interfaces</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

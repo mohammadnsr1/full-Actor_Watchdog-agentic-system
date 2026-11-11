@@ -1,70 +1,62 @@
 # Next steps
 
-Updated 2026-11-03 at the end of Milestone 3 (planning service with switchable backends).
+Updated 2026-11-10 at the end of Milestone 3 (v2): platform backends, names in config, Humble container.
 
 ## State
 
-- M1 plan, M2 copy: done and checked by Mohammad (an S3 WatchDog session ran from this repo).
-- M3: built and offline-tested here. Nothing run against Isaac or MoveIt yet.
+- M1 (v2 plan), M2 (copy): done. Your 2026-11-10 answers are recorded in `docs/BUILD_PLAN.md` section 7.
+- M3 (this milestone): built and offline-tested here. Nothing run against Isaac yet. **Not committed**: commits and pushes are yours (answer 10).
+- M4 (planning service, old M3): built earlier; its names now come from the platform config too. Your live check (below) covers both.
 
 ## What Milestone 3 added
 
 | Path | What |
 |---|---|
-| `ros2_ws/src/cell_planner_msgs/` | Services `PlanToPose`, `PlanToJoints`, `PlanCartesian`, `CheckTrajectory`, `AddCollisionObject`, `RemoveCollisionObject`, `SyncCollisionObjects`; messages `PlanningReport` (backend, planning time, failure code, `wall_time_iso`), `ExecutorFact`, `Ruling`, `WatchdogNotice` (the last three are for M4 and M6). |
-| `ros2_ws/src/cell_planning_service/` | Backend contract, generic service adapter, failure-code vocabulary, time parameterization, `cell.yaml` reader, **MoveIt plan-only backend** (`/plan_kinematic_path`, `/compute_cartesian_path`, `/check_state_validity`, `/apply_planning_scene`; sync delegated to `/sync_scene_objects`), node, launch file that picks the backend from `config/cell.yaml`. |
-| `ros2_ws/src/cell_planning_curobo/` | cuRobo v0.7.8 backend (own venv, re-exec), robot config from `config/robot/ur5e.xrdf` plus RG2 spheres, explicit world, IK-chain Cartesian planner, experimental depth-obstacle layer behind `planner.depth_obstacles`, `INSTALL.md`. |
-| `config/cell.yaml` | New. `planner.backend: moveit`, request defaults per backend, `watchdog.halt.cancel_targets`, and the shape of later sections. |
-| `config/robot/rg2_collision_spheres.yaml` | New, all `TODO(mohammad)`. |
-| `robot_backend/watchdog/halt.py` | Rewritten: cancel-all to a configurable list of targets. Default and first target `/arm_controller/follow_joint_trajectory/_action/cancel_goal`; `/move_action/_action/cancel_goal` kept as an extra in `cell.yaml`. |
-| `robot_backend/cell_config.py` | New, small reader for `config/cell.yaml`. |
-| `robot_backend/mcp_servers/watchdog_mcp_server.py` | One edit: halt targets and timeout come from `cell.yaml`. |
-| `robot_backend/package.xml` | Added the `action_msgs`, `cell_sync_interfaces`, `python3-yaml` dependencies it already used. |
-| `sim_moveit_bringup` launch | New args `start_planning_service` (default true) and `cell_config_path`; includes the planning-service launch after the orchestrator. |
+| `config/platforms/sim.yaml`, `hardware.yaml` | Every topic, frame, joint, action, service name; gripper readings; signal availability. Hardware values are `TODO(mohammad)` where unknown. |
+| `config/cameras/sim.yaml`, `hardware.yaml` | camera1 (wrist, executor's pose query) and camera2 (table, WatchDog's channel) roles, topics, extrinsics. Sim camera2 = the existing stage camera; camera1 disabled until you add it (M6). Hardware: Orbbec Gemini 335Lg both, poses `TODO`. |
+| `config/gripper/rg2_kinematics.yaml`, `rg6_kinematics.yaml` | WatchDog-only gripper models. RG2 constants copied from the controller; RG6 all `TODO`. |
+| `ros2_ws/src/cell_platform_interfaces/` | Abstract motion/gripper/pose/scene backends, the strict platform-config reader, Humble/Jazzy `compat.py`, signal vocabulary, shared `FollowJointTrajectory` motion client and `Detection3DArray` pose source. `ros2 run cell_platform_interfaces show_platform sim`. |
+| `ros2_ws/src/cell_backend_sim/` | Bridge motion, RG2 gripper, two pose sources, command-server scene client (M6), and `ground_truth_pose_publisher` (Isaac TF to `/camera1/poses` and `/camera2/poses`). |
+| `ros2_ws/src/cell_backend_hw/` | Scaffold: UR driver motion, RG6 over URScript (refuses until the URCap function names are filled), pose topics, operator reset prompt. |
+| WatchDog server | New read-only tool `available_evidence_sources`; halt primary target from the platform; recorder, event bus, gate, camera topics, observation frame, effort joint all from config. Registry `cell:` block superseded by the platform frames. |
+| Launch files | Bridge and bringup read the platform config; bringup records with `-s mcap` and starts the pose publisher. |
+| `docker/humble/` | Dockerfile (ros:humble, Python 3.10, builds the shared packages + `cell_backend_hw`, skips the sim packages), compose with host networking, `ROS_DOMAIN_ID`/RMW `TODO`. |
+| `docs/PLATFORMS.md` | What runs where, the single-distro rule, the Humble/Jazzy differences, where names live. |
 
-Checked here: `colcon build` (13 packages), 21 planning tests, the halt callback-group regression test (now against the bridge cancel service), the WatchDog server imports from the venv with the new halt config, the node starts from the launch file and registers the seven services, and a call with MoveIt down returns `BACKEND_UNAVAILABLE` with a stamped report.
+Checked here: `colcon build` (16 packages); 43 tests (platform config, signals, compat, sim backend, hardware scaffold, planning, halt regression); WatchDog server imports from the venv with the new helpers; `show_platform` for both platforms; both launch files load and resolve their names; the orchestrator, the pose publisher (21 registry objects) and the planning node start and report the configured names.
 
-## `TODO(mohammad)` values introduced in M3 (all in `config/cell.yaml` unless noted)
+## What you run to check Milestone 3
 
-- `planner.moveit.eef_step_m`, `jump_threshold`: Cartesian step; required before `plan_cartesian` works (or callers pass `eef_step_m` in the request).
-- `planner.moveit.check_resolution_rad`: required before `check_trajectory` works (or callers pass it).
-- `planner.curobo.python`, `allowed_planning_time_s`, `num_planning_attempts`, `eef_step_m`, `check_resolution_rad`, `motion_gen_overrides`, and the whole `depth` block.
-- `config/robot/rg2_collision_spheres.yaml`: every RG2 link. The cuRobo node refuses to start until filled.
-- `budgets.*`, `health.*`: for M6 and M7.
-
-## What Mohammad runs to check Milestone 3
-
-1. Rebuild and source (already built here; rebuild after any edit):
+1. Rebuild and source:
 
    ```bash
    cd ~/full-Actor_Watchdog-agentic-system/ros2_ws && source /opt/ros/jazzy/setup.bash && colcon build && source install/setup.bash
+   ros2 run cell_platform_interfaces show_platform sim      # the names every process will use
    ```
 
-2. Isaac playing, then bring the cell up as before. The bringup now also starts the planning service; expect the line `planning service backend=moveit (from .../config/cell.yaml)` and the node's `planning service up` line.
+2. Rerun the Milestone 2 check: Isaac playing, bringup as before, one S3 WatchDog session. Expect the same behaviour as before plus: a `ground_truth_pose_publisher` line listing 21 objects, `ros2 topic hz /camera2/poses` at 20 Hz, and the `available_evidence_sources` tool listed by the session (call it once by hand if you like; it only reports).
 
-3. Plan from the current pose to a joint goal (replace the six values with a nearby pose you trust; the request's start state is empty, so it plans from `/joint_states`):
+3. Milestone 4 live check (still owed): plan to a joint goal through `/cell/planning/plan_to_joints` with no arm motion, then cancel a running bridge goal through `/arm_controller/follow_joint_trajectory/_action/cancel_goal` (full commands in the previous NEXT_STEPS, unchanged; the names now come from `config/platforms/sim.yaml`).
+
+4. Humble container (workstation):
 
    ```bash
-   ros2 service call /cell/planning/plan_to_joints cell_planner_msgs/srv/PlanToJoints \
-     "{planning_group: ur_manipulator, joint_names: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint], joint_positions: [0.0, -1.57, 1.57, -1.57, -1.57, 0.0]}"
+   docker compose -f docker/humble/compose.yaml build
+   docker compose -f docker/humble/compose.yaml run --rm cell ros2 run cell_platform_interfaces show_platform hardware
    ```
 
-   Expect `ok: true`, a non-empty `trajectory` with increasing `time_from_start`, and `report.backend: moveit`, `report.failure_code: ''`. The arm must **not** move: this is the proof that the service is plan-only.
+   Expect the hardware signal list (everything gripper-related `missing`). Report any build error: the 3.10 and Humble differences this build turns up go into `docs/PLATFORMS.md`.
 
-4. Prove the halt retarget with the bridge alone. Send the returned trajectory to the bridge (`ros2 action send_goal /arm_controller/follow_joint_trajectory control_msgs/action/FollowJointTrajectory "{trajectory: ...}"`, or any client you prefer), and while it runs call the cancel service:
+## `TODO(mohammad)` introduced in M3
 
-   ```bash
-   ros2 service call /arm_controller/follow_joint_trajectory/_action/cancel_goal action_msgs/srv/CancelGoal "{goal_info: {goal_id: {uuid: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}}"
-   ```
+- `config/platforms/hardware.yaml`: `frames.tcp`, `motion.action`/`cancel_service` (confirm), `motion.goal_*`, driver status topics, `topics.urscript_command` (confirm), `gripper.urscript.*`, `gripper.width_range_m`, `gripper.force_range_n`.
+- `config/platforms/sim.yaml`: `scene.port` (M6).
+- `config/cameras/sim.yaml`: camera1 pose and resolution (after you add the wrist camera), camera2 resolution. `config/cameras/hardware.yaml`: both poses, topic names to confirm.
+- `config/gripper/rg6_kinematics.yaml`: everything.
+- `docker/humble/compose.yaml`: `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`; Dockerfile: UR driver message packages.
+- Still open from M4: `planner.moveit.eef_step_m`, `jump_threshold`, `check_resolution_rad`; all `planner.curobo.*` request defaults and `python`; `config/robot/rg2_collision_spheres.yaml`; `budgets.*`, `health.*`.
 
-   Expect `return_code: 0`, one entry in `goals_canceling`, the action ending with status CANCELED, and the arm stopping at its current setpoint (no hold is published; this was your choice in Q6).
+## What Milestone 4 finishing touches and Milestone 5 will do once approved
 
-5. Optional: `plan_cartesian` and `check_trajectory` need `eef_step_m` and `check_resolution_rad` either in `cell.yaml` or in the request; until then they return `INVALID_REQUEST` naming the missing default.
-
-6. cuRobo: follow `ros2_ws/src/cell_planning_curobo/INSTALL.md` when you want it. Not needed for Milestone 4.
-
-## What Milestone 4 will do once approved
-
-- `ros2_ws/src/cell_physical_events/`: the event node (`contact_made/lost`, `part_lifted/released/settled`, `part_approaching_feature`, `part_engaged_feature`, `effort_rising`, `motion_started/stopped`, `workspace_object_appeared`), thresholds as `TODO(mohammad)` config, effort proxy for contact until M5.
-- WatchDog server: strip `steps:` and step-scoped `signal_ready`, drop the executor-event subscription, held-object tracking from physical events, run termination from the episode runner, `arm_wake`, `issue_ruling`, the acceptance inspection tool, `record_only | halt_enabled` and `consult` modes from `cell.yaml`.
-- Plan-blind prompt from the S3 prompt; `docs/INDEPENDENCE.md`.
+- M4 close-out: UR7e + RG6 cuRobo robot config placeholders (`config/robot/rg6_collision_spheres.yaml`, a UR7e XRDF `TODO`), `compat.set_if_present` for `pipeline_id` if the container build asks for it. Small.
+- M5: `cell_physical_events` node on `/cell/physical_events` with `source` and `confidence` per event and thresholds as `TODO(mohammad)`; plan-blind WatchDog (strip `steps:`, step-scoped `signal_ready`, executor-event subscription; held object from `part_lifted/released`; termination from the runner; `arm_wake`, `issue_ruling`, cue tool for camera1 poses, two-camera `look()`, evidence tagging with `shared_source`, acceptance inspection, `record_only | halt_enabled`, `consult`); plan-blind prompt; `docs/INDEPENDENCE.md`.

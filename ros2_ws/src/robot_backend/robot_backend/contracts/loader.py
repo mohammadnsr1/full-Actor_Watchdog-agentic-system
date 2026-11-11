@@ -169,9 +169,12 @@ def load_pick_contract(
     # read from the registry like any other threshold, never hard-coded or
     # left to be parsed out of a clause's English description. See
     # model_registry.yaml's cell.gripper section.
-    effort_joint_name = (
-        registry.get("cell", {}).get("gripper", {}).get("effort_joint_name")
-    )
+    # Since Milestone 3 (v2) the cell block is a platform value: the effort
+    # joint is joints.gripper_effort in config/platforms/<platform>.yaml, and
+    # it is absent on a platform with no gripper effort signal.
+    from robot_backend.cell_config import cell_block
+
+    effort_joint_name = cell_block().get("gripper", {}).get("effort_joint_name")
 
     # --- Extract spec values (let KeyError/TypeError surface for missing fields) ---
     # grasp_width_m already extracted above from step_spec, not the registry.

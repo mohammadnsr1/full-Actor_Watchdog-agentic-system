@@ -42,7 +42,7 @@ from typing import Any
 
 import rclpy
 
-GO_SERVICE = "/cell/request_go"
+# The gate service name comes from the platform config (services.request_go).
 
 # Read once at import time so both begin_step and mark_phase use the same
 # value without each having to know about the env var individually. See the
@@ -59,7 +59,9 @@ def _get_client(node: Any) -> Any:
         return client
     from cell_sync_interfaces.srv import RequestGo
 
-    client = node.create_client(RequestGo, GO_SERVICE)
+    from robot_backend.cell_config import service as _platform_service
+
+    client = node.create_client(RequestGo, _platform_service("request_go"))
     setattr(node, _CLIENT_ATTR, client)
     return client
 

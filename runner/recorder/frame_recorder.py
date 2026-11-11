@@ -59,7 +59,15 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-DEFAULT_IMAGE_TOPIC = "/recorder_rgb"
+# The image topic is the `recorder` camera's rgb topic in
+# config/cameras/<platform>.yaml (Milestone 3 v2); the image_topic parameter
+# overrides it when non-empty. No topic name is written here.
+
+
+def _recorder_topic_from_config() -> str:
+    from cell_platform_interfaces.platform_config import load_platform_config
+
+    return load_platform_config().camera_topic("recorder", "rgb")
 
 # sensor_msgs/Image encodings handled for raw topics: encoding -> (Pillow mode, rawmode)
 _RAW_MODES = {
@@ -94,14 +102,14 @@ def resolve_session_dir() -> Optional[Path]:
 class FrameRecorder(Node):
     def __init__(self) -> None:
         super().__init__("paper_media_frame_recorder")
-        self.declare_parameter("image_topic", DEFAULT_IMAGE_TOPIC)
+        self.declare_parameter("image_topic", "")
         self.declare_parameter("out_dir", "")
         self.declare_parameter("camera_name", "recorder")
         self.declare_parameter("rate_hz", 10.0)
         self.declare_parameter("jpeg_quality", 95)
         self.declare_parameter("max_width", 1280)
 
-        self.topic = str(self.get_parameter("image_topic").value)
+        self.topic = str(self.get_parameter("image_topic").value).strip() or _recorder_topic_from_config()
         self.camera_name = str(self.get_parameter("camera_name").value).strip() or "main"
         rate_hz = float(self.get_parameter("rate_hz").value)
         self.period_ns = int(1e9 / rate_hz) if rate_hz > 0 else 0

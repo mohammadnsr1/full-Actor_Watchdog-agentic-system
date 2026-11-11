@@ -1,0 +1,34 @@
+# Workstation-side Humble container for the hardware platform.
+#
+#   docker compose -f docker/humble/compose.yaml build
+#   docker compose -f docker/humble/compose.yaml run --rm cell bash
+#
+# Host networking: the container joins the same DDS domain as the UR AI
+# Accelerator. Never run a Jazzy node in this domain (single-distro rule,
+# docs/PLATFORMS.md).
+
+services:
+  cell:
+    build:
+      context: ../..
+      dockerfile: docker/humble/Dockerfile
+    image: cell-humble
+    network_mode: host
+    ipc: host
+    environment:
+      # TODO(mohammad): the accelerator's values (BUILD_PLAN q12).
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
+      CELL_PLATFORM: hardware
+      CELL_REPO_ROOT: /cell
+      CELL_CONFIG_PATH: /cell/config/cell.yaml
+      # The WatchDog session root inside the container; records/ is mounted.
+      WATCHDOG_SESSION_ROOT: /cell/records/sessions
+    volumes:
+      # Live source and config so a rebuild inside the container picks up edits.
+      - ../../ros2_ws/src:/cell/ros2_ws/src
+      - ../../config:/cell/config
+      - ../../agents:/cell/agents
+      - ../../records:/cell/records
+    stdin_open: true
+    tty: true

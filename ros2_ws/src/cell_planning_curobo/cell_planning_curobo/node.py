@@ -42,11 +42,29 @@ def main(args: list[str] | None = None) -> int:
     from rclpy.executors import MultiThreadedExecutor
     from rclpy.node import Node
 
-    from cell_planning_service.service_server import DEFAULT_SERVICE_NAMESPACE, PlanningServiceServer
+    from cell_planning_service.service_server import PlanningServiceServer
 
     from cell_planning_curobo.curobo_backend import CuRoboBackend
 
     root = repo_root() or path.parent.parent
+    # Names from the platform config; cell.yaml planner.* overrides when set.
+    from cell_platform_interfaces.platform_config import load_platform_config
+
+    platform = load_platform_config(repo_root=root)
+    curobo_cfg["services"] = {k: platform.service(k) for k in ("sync_scene_objects", "get_planning_scene")}
+    if not curobo_cfg.get("base_link"):
+        curobo_cfg["base_link"] = platform.frame("base")
+    if not curobo_cfg.get("ee_link"):
+        curobo_cfg["ee_link"] = platform.frame("tcp")
+    depth_cfg = dict(curobo_cfg.get("depth", {}) or {})
+    if not depth_cfg.get("depth_topic"):
+        depth_cfg["depth_topic"] = platform.camera_topic("camera2", "depth")
+    if not depth_cfg.get("camera_info_topic"):
+        depth_cfg["camera_info_topic"] = platform.camera_topic("camera2", "camera_info")
+    if not depth_cfg.get("world_frame"):
+        depth_cfg["world_frame"] = platform.frame("world")
+    curobo_cfg["depth"] = depth_cfg
+    joint_state_topic = str(planner.get("joint_state_topic") or platform.topic("joint_states"))
     rclpy.init(args=args)
     node = Node("cell_planning_service")
     node.declare_parameter("cell_config_path", "")
@@ -72,9 +90,9 @@ def main(args: list[str] | None = None) -> int:
             defaults=curobo_cfg,
             repo_root=root,
             joint_limits_text=limits_text,
-            planning_frame=str(curobo_cfg.get("base_link", "base_link")),
+            planning_frame=str(curobo_cfg["base_link"]),
             callback_group=group,
-            joint_state_topic=str(planner.get("joint_state_topic", "/joint_states")),
+            joint_state_topic=joint_state_topic,
             depth_layer=depth_layer,
         )
     except RuntimeError as exc:
@@ -82,7 +100,7 @@ def main(args: list[str] | None = None) -> int:
         node.destroy_node()
         rclpy.shutdown()
         return 2
-    namespace = str(planner.get("service_namespace", DEFAULT_SERVICE_NAMESPACE))
+    namespace = str(planner.get("service_namespace") or platform.service("planning_namespace"))
     PlanningServiceServer(node, backend, namespace=namespace, callback_group=group)
     node.get_logger().info(f"planning service up: backend=curobo namespace={namespace} config={path}")
     executor = MultiThreadedExecutor(num_threads=4)

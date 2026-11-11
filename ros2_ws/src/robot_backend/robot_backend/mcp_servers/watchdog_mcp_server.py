@@ -374,6 +374,18 @@ _SCENARIO = os.environ.get("WATCHDOG_SCENARIO")
 _VALID_SCENARIOS = {"S1", "S2", "S3"}
 
 
+def _cell_block_for_contract() -> dict[str, Any]:
+    """The cell block get_contract reports: frames and the effort joint from
+    the platform config (robot_backend.cell_config.cell_block), never from the
+    registry. Never raises: a platform problem is reported as an error field."""
+    try:
+        from robot_backend.cell_config import cell_block
+
+        return cell_block()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"platform config unavailable: {exc}"}
+
+
 def _tool_for(*scenarios: str):
     """mcp.tool() when this scenario serves the tool, else a no-op decorator.
 
@@ -704,19 +716,21 @@ def _ensure_watchdog() -> WatchDogContext:
         image_buffer, image_manager, camera_streams = _build_camera_pipeline(
             node, ReentrantCallbackGroup()
         )
-        # Halt targets come from config/cell.yaml watchdog.halt.cancel_targets
-        # (first = decides ok, rest = extras). Default: the bridge's
-        # FollowJointTrajectory cancel service alone.
-        from robot_backend.cell_config import load_cell_config, section as _cfg_section
+        # Halt targets: the platform's motion cancel service first (it decides
+        # ok), then config/cell.yaml watchdog.halt.extra_cancel_targets.
+        from robot_backend.cell_config import load_cell_config, platform as _platform
+        from robot_backend.cell_config import section as _cfg_section
 
         _cell_cfg, _ = load_cell_config()
         _halt_cfg = _cfg_section(_cell_cfg, "watchdog", "halt")
+        _targets = [str(_platform().get("motion", "cancel_service"))]
+        _targets += [str(t) for t in (_halt_cfg.get("extra_cancel_targets") or []) if t]
         halt_client = HaltClient(
             node=node,
             event_bus=event_bus,
             callback_group=client_cb_group,
             timeout_sec=float(_halt_cfg.get("timeout_s", 1.0)),
-            cancel_targets=_halt_cfg.get("cancel_targets") or None,
+            cancel_targets=_targets,
         )
         ready_client = ReadyClient(
             node=node,
@@ -1550,7 +1564,7 @@ if mcp is not None:
                 contract=contract.model_dump(mode="json"),
                 raw_spec=_object_spec(ctx, object_id),
                 acm_allowed_object_pairs=acm_pairs if isinstance(acm_pairs, list) else [],
-                cell=ctx.registry.get("cell", {}),
+                cell=_cell_block_for_contract(),
                 object_frames=ctx.recorder.object_frames,
             )
         except Exception as exc:
@@ -2310,6 +2324,25 @@ if mcp is not None:
         command = "available_monitor_definitions"
         try:
             return _ok(command, monitors=monitor_definitions())
+        except Exception as exc:
+            return _error(command, exc)
+
+    @mcp.tool()
+    def available_evidence_sources() -> dict[str, Any]:
+        """Return which physical signals exist on this platform and where each
+        comes from, plus the cameras and their roles.
+
+        Each signal is `available` (native meaning), `proxy` (a correlated
+        stand-in, named in `source`), or `missing` (nothing provides it; no
+        value is ever published for it). Read from the platform config; does
+        not depend on a live node.
+        """
+        command = "available_evidence_sources"
+        try:
+            from cell_platform_interfaces.signals import evidence_sources_report
+            from robot_backend.cell_config import platform as _platform
+
+            return _ok(command, **evidence_sources_report(_platform()))
         except Exception as exc:
             return _error(command, exc)
 

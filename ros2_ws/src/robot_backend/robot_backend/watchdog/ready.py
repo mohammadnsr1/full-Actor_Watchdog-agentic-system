@@ -96,9 +96,11 @@ class ReadyClient:
                 return
             from cell_sync_interfaces.srv import SignalReady
 
+            from robot_backend.cell_config import service as _platform_service
+
             self._client = self.node.create_client(
                 SignalReady,
-                "/cell/signal_ready",
+                _platform_service("signal_ready"),
                 callback_group=self._callback_group,
             )
             self._SignalReady = SignalReady

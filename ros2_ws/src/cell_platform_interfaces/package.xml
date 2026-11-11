@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cell_platform_interfaces</name>
+  <version>0.1.0</version>
+  <description>Platform-neutral contracts for the assembly cell: abstract motion, gripper, pose-source and scene backends; the platform config reader (every topic, frame, joint, action and service name comes from config/platforms/&lt;platform&gt;.yaml); the Humble/Jazzy compatibility shim; the signal-availability vocabulary. Python 3.10 and ROS 2 Humble compatible. No new ROS interfaces: every message the backends exchange is a standard one (control_msgs, sensor_msgs, vision_msgs, trajectory_msgs).</description>
+  <maintainer email="mnasr3@asu.edu">Mohammad Nasr</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
