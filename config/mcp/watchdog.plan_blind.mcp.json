@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "PLAN-BLIND WatchDog session MCP config (Milestone 5). The watchdog server ONLY,",
+    "launched with --strict-mcp-config. WATCHDOG_TASK_PATH names the REQUIREMENTS file",
+    "(acceptance + invariants, no steps); the server refuses a file with a steps block.",
+    "WATCHDOG_SCENARIO=S3 keeps the authored-monitor tool surface (arm_custom_monitor).",
+    "Mode and consult come from config/cell.yaml watchdog.mode / watchdog.consult."
+  ],
+  "mcpServers": {
+    "robot-backend-watchdog": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "unset VIRTUAL_ENV && source /opt/ros/jazzy/setup.bash && source ~/full-Actor_Watchdog-agentic-system/ros2_ws/install/setup.bash && ros2 run robot_backend watchdog_mcp_server"
+      ],
+      "env": {
+        "WATCHDOG_TASK_PATH": "/home/mohammad/full-Actor_Watchdog-agentic-system/config/requirements/fmb_assembly_2.yaml",
+        "WATCHDOG_SCENARIO": "S3",
+        "WATCHDOG_AGENT_CONFIG": "/home/mohammad/full-Actor_Watchdog-agentic-system/agents/config/watchdog_agent_plan_blind.yaml"
+      }
+    }
+  },
+  "_venv_comment": "unset VIRTUAL_ENV is load-bearing: see watchdog.mcp.json."
+}

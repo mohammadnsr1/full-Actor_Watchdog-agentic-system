@@ -1,62 +1,87 @@
 # Next steps
 
-Updated 2026-11-10 at the end of Milestone 3 (v2): platform backends, names in config, Humble container.
+Updated 2026-11-11 at the end of Milestone 5 (v2): physical events, evidence sources, plan-blind WatchDog.
 
 ## State
 
-- M1 (v2 plan), M2 (copy): done. Your 2026-11-10 answers are recorded in `docs/BUILD_PLAN.md` section 7.
-- M3 (this milestone): built and offline-tested here. Nothing run against Isaac yet. **Not committed**: commits and pushes are yours (answer 10).
-- M4 (planning service, old M3): built earlier; its names now come from the platform config too. Your live check (below) covers both.
+- M1, M2: done. M3 and M4: built, and checked live by Mohammad on 2026-11-10 (20 Hz poses, plan-only service, bridge cancel through the platform target, full motion through the sim backend).
+- M5 (this milestone): built and offline-tested here. Not run against Isaac yet. **Not committed** (yours).
+- Container build (M3 step 4) not reported yet; it does not block M5.
 
-## What Milestone 3 added
+## What Milestone 5 added
 
 | Path | What |
 |---|---|
-| `config/platforms/sim.yaml`, `hardware.yaml` | Every topic, frame, joint, action, service name; gripper readings; signal availability. Hardware values are `TODO(mohammad)` where unknown. |
-| `config/cameras/sim.yaml`, `hardware.yaml` | camera1 (wrist, executor's pose query) and camera2 (table, WatchDog's channel) roles, topics, extrinsics. Sim camera2 = the existing stage camera; camera1 disabled until you add it (M6). Hardware: Orbbec Gemini 335Lg both, poses `TODO`. |
-| `config/gripper/rg2_kinematics.yaml`, `rg6_kinematics.yaml` | WatchDog-only gripper models. RG2 constants copied from the controller; RG6 all `TODO`. |
-| `ros2_ws/src/cell_platform_interfaces/` | Abstract motion/gripper/pose/scene backends, the strict platform-config reader, Humble/Jazzy `compat.py`, signal vocabulary, shared `FollowJointTrajectory` motion client and `Detection3DArray` pose source. `ros2 run cell_platform_interfaces show_platform sim`. |
-| `ros2_ws/src/cell_backend_sim/` | Bridge motion, RG2 gripper, two pose sources, command-server scene client (M6), and `ground_truth_pose_publisher` (Isaac TF to `/camera1/poses` and `/camera2/poses`). |
-| `ros2_ws/src/cell_backend_hw/` | Scaffold: UR driver motion, RG6 over URScript (refuses until the URCap function names are filled), pose topics, operator reset prompt. |
-| WatchDog server | New read-only tool `available_evidence_sources`; halt primary target from the platform; recorder, event bus, gate, camera topics, observation frame, effort joint all from config. Registry `cell:` block superseded by the platform frames. |
-| Launch files | Bridge and bringup read the platform config; bringup records with `-s mcap` and starts the pose publisher. |
-| `docker/humble/` | Dockerfile (ros:humble, Python 3.10, builds the shared packages + `cell_backend_hw`, skips the sim packages), compose with host networking, `ROS_DOMAIN_ID`/RMW `TODO`. |
-| `docs/PLATFORMS.md` | What runs where, the single-distro rule, the Humble/Jazzy differences, where names live. |
+| `ros2_ws/src/cell_physical_events/` | Node `physical_events_node` on `/cell/physical_events` (`cell_planner_msgs/PhysicalEvent`: `wall_time_iso`, `sim_time`, `kind`, `scene_ids`, `source`, `confidence`, `value`, `detail`). Eleven kinds; detectors in `detectors.py` are ROS-free and tested. Every threshold lives in `config/cell.yaml: physical_events` and is `TODO(mohammad)`: a zero disables that detector with one warning at start. Started by the bringup (`start_physical_events`). |
+| `config/requirements/fmb_assembly_2.yaml` | The WatchDog's only task input: acceptance parts (placement frame, grasp width), fixtures, bystanders, invariants in prose. No steps. The server refuses a file with `steps`. |
+| `config/parts/watchdog_parts.yaml`, `executor_parts.yaml` | The registry split by role (`tools/split_registry.py`). WatchDog's copy carries tolerances and `limits.sim` / `limits.hardware` (hardware values `TODO`), and each part's feature frames. |
+| WatchDog server | Plan-blind: executor events dropped at ingest; held part from `part_lifted`/`part_released`; object poses from the camera2 pose channel (never object TF), TCP aligned to the observations' stamp; termination on the episode-end notice only; per-part rollup; evidence tagging with `shared_source` and missing-evidence counts; modes `record_only`/`halt_enabled` and `consult` from `cell.yaml`; new tools `arm_wake`, `disarm_wake`, `wrist_pose_cue`, `issue_ruling`, `inspect_acceptance`, `look(camera=)`. Full map in `docs/INDEPENDENCE.md`. |
+| Prompt and configs | `agents/prompts/watchdog_system_plan_blind.txt` (from the S3 prompt), `watchdog_task_plan_blind.txt`, `agents/config/watchdog_agent_plan_blind.yaml`, `config/mcp/watchdog.plan_blind.mcp.json`. `runner/run_watchdog.sh plan_blind` (default) launches it; `run_watchdog.sh s3` keeps the old session for liveness checks. |
+| Tests | 450 pass across the workspace. Seven WATCHDOG tests that tested the removed coupling were deleted (listed in `docs/PROVENANCE.md`) and replaced by `test_plan_blind_watchdog.py`. |
 
-Checked here: `colcon build` (16 packages); 43 tests (platform config, signals, compat, sim backend, hardware scaffold, planning, halt regression); WatchDog server imports from the venv with the new helpers; `show_platform` for both platforms; both launch files load and resolve their names; the orchestrator, the pose publisher (21 registry objects) and the planning node start and report the configured names.
+Checked here: full `colcon build` (17 packages); the plan-blind WatchDog context comes up against a bare graph (mode `record_only`, pose source `ground_truth`, 21 objects, TCP frame), a halt in `record_only` is recorded as suppressed with a `halt_id`; the physical events node starts and reports every detector disabled until thresholds are set; the requirements file loads and renders without a `{{STEPS}}` placeholder; the bringup launch imports with the new node.
 
-## What you run to check Milestone 3
+## What you run to check Milestone 5
 
-1. Rebuild and source:
+1. Rebuild, then set a first set of physical-event thresholds in `config/cell.yaml` so the node has something to publish. Nothing is invented on my side; pick values you can defend from the cell (joint speeds, effort units you have measured, the RG2 geometry):
 
-   ```bash
-   cd ~/full-Actor_Watchdog-agentic-system/ros2_ws && source /opt/ros/jazzy/setup.bash && colcon build && source install/setup.bash
-   ros2 run cell_platform_interfaces show_platform sim      # the names every process will use
+   ```yaml
+   physical_events:
+     motion_speed_threshold_rad_s: <rad/s>    # arm counts as moving above this
+     motion_debounce_s: <s>
+     lift_threshold_m: <m>                    # rise above rest height = lifted
+     hold_distance_m: <m>                     # part within this of the TCP = held
+     release_distance_m: <m>                  # beyond this from the TCP = released
+     settle_speed_m_s: <m/s>
+     settle_window_s: <s>
+     approach_distance_m: <m>
+     engage_distance_m: <m>
+     unknown_object_min_confidence: <0..1>
    ```
 
-2. Rerun the Milestone 2 check: Isaac playing, bringup as before, one S3 WatchDog session. Expect the same behaviour as before plus: a `ground_truth_pose_publisher` line listing 21 objects, `ros2 topic hz /camera2/poses` at 20 Hz, and the `available_evidence_sources` tool listed by the session (call it once by hand if you like; it only reports).
+   Leave the effort proxy at zero unless you want contact-by-effort; `effort_rise_*` likewise.
 
-3. Milestone 4 live check (still owed): plan to a joint goal through `/cell/planning/plan_to_joints` with no arm motion, then cancel a running bridge goal through `/arm_controller/follow_joint_trajectory/_action/cancel_goal` (full commands in the previous NEXT_STEPS, unchanged; the names now come from `config/platforms/sim.yaml`).
-
-4. Humble container (workstation):
+2. Bring the cell up as before. Expect the new line `physical events on /cell/physical_events: 10 parts, 11 frames, pose source ground_truth, effort joint finger_joint` and one warning per detector you left at zero. Then, in a second terminal:
 
    ```bash
-   docker compose -f docker/humble/compose.yaml build
-   docker compose -f docker/humble/compose.yaml run --rm cell ros2 run cell_platform_interfaces show_platform hardware
+   ros2 topic echo /cell/physical_events
+   python3 runner/tools/plan_execute_cancel_check.py --goal 0.0 -1.57 1.57 -1.57 -1.57 0.0 --no-cancel
    ```
 
-   Expect the hardware signal list (everything gripper-related `missing`). Report any build error: the 3.10 and Humble differences this build turns up go into `docs/PLATFORMS.md`.
+   Expect `motion_started` then `motion_stopped` with `source: joint_state`. If you move a part by hand in Isaac you should see `part_lifted` (and `part_released`, `part_settled` when you put it down) only if the TCP is near it; otherwise nothing, because held means near the TCP. Paste a few events.
 
-## `TODO(mohammad)` introduced in M3
+3. Plan-blind WatchDog session, `record_only` (the default in `cell.yaml`):
 
-- `config/platforms/hardware.yaml`: `frames.tcp`, `motion.action`/`cancel_service` (confirm), `motion.goal_*`, driver status topics, `topics.urscript_command` (confirm), `gripper.urscript.*`, `gripper.width_range_m`, `gripper.force_range_n`.
-- `config/platforms/sim.yaml`: `scene.port` (M6).
-- `config/cameras/sim.yaml`: camera1 pose and resolution (after you add the wrist camera), camera2 resolution. `config/cameras/hardware.yaml`: both poses, topic names to confirm.
-- `config/gripper/rg6_kinematics.yaml`: everything.
-- `docker/humble/compose.yaml`: `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`; Dockerfile: UR driver message packages.
-- Still open from M4: `planner.moveit.eef_step_m`, `jump_threshold`, `check_resolution_rad`; all `planner.curobo.*` request defaults and `python`; `config/robot/rg2_collision_spheres.yaml`; `budgets.*`, `health.*`.
+   ```bash
+   ./runner/run_watchdog.sh plan_blind
+   ```
 
-## What Milestone 4 finishing touches and Milestone 5 will do once approved
+   Expect the session to load the plan-blind prompt and the requirements file, call `available_evidence_sources` and `get_contract` for the four parts, arm monitors and wake conditions, and then wait. It must never see a step name. While it waits, drive the arm with the check script (step 2) and watch whether it wakes on `motion_started`. Then end the episode by hand (the runner does this in M7):
 
-- M4 close-out: UR7e + RG6 cuRobo robot config placeholders (`config/robot/rg6_collision_spheres.yaml`, a UR7e XRDF `TODO`), `compat.set_if_present` for `pipeline_id` if the container build asks for it. Small.
-- M5: `cell_physical_events` node on `/cell/physical_events` with `source` and `confidence` per event and thresholds as `TODO(mohammad)`; plan-blind WatchDog (strip `steps:`, step-scoped `signal_ready`, executor-event subscription; held object from `part_lifted/released`; termination from the runner; `arm_wake`, `issue_ruling`, cue tool for camera1 poses, two-camera `look()`, evidence tagging with `shared_source`, acceptance inspection, `record_only | halt_enabled`, `consult`); plan-blind prompt; `docs/INDEPENDENCE.md`.
+   ```bash
+   ros2 topic pub --once /cell/watchdog_notices cell_planner_msgs/msg/WatchdogNotice "{wall_time_iso: '$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)', kind: episode_end, detail: manual}"
+   ```
+
+   Expect the session to wake with `wake: episode_end`, call `inspect_acceptance` (every part should report `pass` or `fail` against its placement frame, or `missing_evidence` if a frame is not published), and record one `record_run_verdict` with `parts_covered` and `evidence_sources`. Paste the final verdict event from `events_watchdog.jsonl` in the session directory.
+
+4. Optional: set `watchdog.mode: halt_enabled` in `cell.yaml`, restart the session, and call `halt_execution` by hand through the session while the check script moves the arm. Expect the arm to stop and a `halt_id`; then `issue_ruling` on it. In `record_only` the same call returns `suppressed: true`.
+
+## `TODO(mohammad)` introduced in M5
+
+- `config/cell.yaml: physical_events.*` (all thresholds).
+- `config/parts/watchdog_parts.yaml: parts.*.limits.hardware.*` (newtons).
+- Hardware placement frames: on hardware nothing publishes the `*_placement` frames yet, so `inspect_acceptance` reports missing evidence for every part until a fixture-relative frame source exists (camera2 FoundationPose of the fixture plus the known offsets, or a static TF).
+- camera1 stays disabled in `config/cameras/sim.yaml` until the wrist camera is added (M6); until then `wrist_pose_cue` and `look(camera="camera1")` report it unavailable.
+
+## Known limits to say out loud
+
+- On sim both pose topics carry the same Isaac truth, so WatchDog's verdicts are independent of the executor's reasoning, not of its perception. Every sample and verdict says `ground_truth`.
+- The ground-truth publisher does not model visibility; "camera2 cannot see the part" never happens on sim until FoundationPose runs there.
+- The registry is still loaded by the WatchDog server for the contract loader and the ACM list (part data, no plan knowledge). Pruning is M7.
+
+## What Milestone 6 will do once approved
+
+- `isaac/cell_command_server/` inside Kit (Isaac 5.1 API, version-specific calls isolated): `load_layout`, `reset`, `verify_reset`, `reload_stage`, `report_poses`, `health`, `contacts_enable` publishing `/cell/pad_contacts`; `config/layouts/fmb_assembly_2/<name>.yaml` seeded placements.
+- `isaac/headless/`: open `assembly_room.usd` headless, ROS 2 bridge on, command server loaded, play; the GUI workflow kept.
+- `isaac/cameras/`: camera1 on the wrist and camera2 at the table from `config/cameras/sim.yaml` (poses `TODO`), publishing RGB, depth, camera info on the configured topics.
+- Recording per episode: frame recorder start/stop into `records/<episode_id>/frames/`, MCAP bag with `/cell/physical_events`, `/cell/watchdog_notices`, `/cell/executor_facts`, both pose topics; works on hardware without sim time.

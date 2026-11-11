@@ -426,6 +426,21 @@ def _launch_setup(context):
             if start_pose_publisher and pose_source == "ground_truth"
             else [LogInfo(msg=f"ground_truth_pose_publisher not started (start_pose_publisher={start_pose_publisher}, poses.source={pose_source})")]
         ),
+        # The cell's physical event vocabulary (Milestone 5): the WatchDog's
+        # wake source. Thresholds in config/cell.yaml physical_events.
+        *(
+            [
+                Node(
+                    package="cell_physical_events",
+                    executable="physical_events_node",
+                    name="cell_physical_events",
+                    output="screen",
+                    parameters=[{"use_sim_time": use_sim_time}],
+                )
+            ]
+            if _is_truthy(LaunchConfiguration("start_physical_events").perform(context))
+            else [LogInfo(msg="cell_physical_events not started (start_physical_events=false)")]
+        ),
         # The cell's timing interlock. Cell infrastructure, not agent
         # infrastructure -- it comes up with the cell so the monitoring agent
         # and executor can be started independently afterward without either
@@ -577,6 +592,11 @@ def generate_launch_description():
                 "use_sim_time",
                 default_value="true",
                 description="Use simulation time from Isaac /clock.",
+            ),
+            DeclareLaunchArgument(
+                "start_physical_events",
+                default_value="true",
+                description="Start cell_physical_events (the /cell/physical_events vocabulary node).",
             ),
             DeclareLaunchArgument(
                 "start_pose_publisher",

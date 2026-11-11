@@ -281,24 +281,36 @@ class HaltPayload(BaseModel):
 
     monitor_id: str
     detail: str
-    # The step under way when the halt landed, from the recorder's own
-    # begin_step/end_step tracking -- never from the halting monitor, which has
-    # no step affiliation. None when no step was open, or when the halt came
-    # from a monitor fire: such a halt is located in time by the event's
-    # wall_time_iso, the same key every other monitor event uses.
+    # Plan-blind (Milestone 5): the WatchDog knows no steps. A halt is located
+    # in time by wall_time_iso only. step_id is kept at None for old readers.
     step_id: str | None = None
+    # Identifier a ruling answers (issue_ruling). Empty on legacy records.
+    halt_id: str = ""
+    # True when watchdog.mode is record_only: the halt was recorded, nothing
+    # was cancelled.
+    suppressed: bool = False
+    mode: str = ""
 
 
 class VerdictPayload(BaseModel):
-    """WatchDog conformance verdict event."""
+    """WatchDog conformance finding on one subject (a part id or "workspace")."""
 
     model_config = ConfigDict(frozen=True)
 
-    step_id: str
+    subject: str
     verdict: str
     claimed_outcome: str | None
     clause_results: list[dict[str, Any]]
     explanation: str
+    # Evidence tagging (Milestone 5). evidence_sources names every channel the
+    # finding rests on (camera2_pose, ground_truth, joint_state, look:camera2,
+    # look:camera1, camera1_pose_cue, ...). shared_source is True when any of
+    # them belongs to the executor's pipeline (camera1) -- the verdict then
+    # is not independent evidence. missing_evidence names what could not be
+    # observed.
+    evidence_sources: list[str] = []
+    missing_evidence: list[str] = []
+    shared_source: bool = False
 
 
 class RunVerdictPayload(BaseModel):
@@ -351,10 +363,21 @@ class RunVerdictPayload(BaseModel):
     verdict: str
     claimed_outcome: str | None
     clause_results: list[dict[str, Any]]
-    steps_covered: list[str]
+    # Plan-blind: parts, not steps. Every clause_results entry carries `part`.
+    parts_covered: list[str]
     explanation: str
     run_scope: bool = True
+    # How the episode ended as the WatchDog observed it: "episode_end" when
+    # the runner's notice arrived, else "no_episode_end". Never the
+    # executor's own status, which this process no longer receives.
     executor_terminal_status: str | None = None
+    # Evidence tagging and the episode's counts (server-populated).
+    evidence_sources: list[str] = []
+    missing_evidence: list[str] = []
+    shared_source: bool = False
+    shared_source_count: int = 0
+    missing_evidence_count: int = 0
+    acceptance: dict[str, Any] | None = None
 
     # step_ids where a step-scoped finding was recorded during the run, in the
     # order recorded, de-duplicated. Empty on a clean run. Lets a scorer join
@@ -538,6 +561,34 @@ class ObservationPayload(BaseModel):
     step_id: str | None = None
 
 
+class RulingPayload(BaseModel):
+    """WatchDog ruling after a halt (issue_ruling)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    halt_id: str
+    ruling: str
+    part: str | None
+    limits: dict[str, float]
+    reason: str
+    published_to_planner: bool
+    enforcement: list[dict[str, Any]] = []
+    evidence_sources: list[str] = []
+    shared_source: bool = False
+
+
+class AcceptancePayload(BaseModel):
+    """WatchDog acceptance inspection at episode end (inspect_acceptance)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    overall: str
+    parts: dict[str, Any]
+    missing_evidence: list[str]
+    evidence_sources: list[str]
+    shared_source: bool = False
+
+
 class EventEnvelope(BaseModel):
     """Top-level wrapper shared by all event types.
 
@@ -577,6 +628,8 @@ class EventEnvelope(BaseModel):
         "frames_captured",
         "look",
         "observation",
+        "ruling",
+        "acceptance",
     ]
     timestamp_ns: int
     wall_time_iso: str
@@ -608,6 +661,8 @@ _WATCHDOG_EVENT_TYPES = frozenset(
         # today, a future S4 executor-side host will too, and
         # ObservationPayload.role is the authoritative discriminator.
         "observation",
+        "ruling",
+        "acceptance",
     }
 )
 
@@ -631,6 +686,8 @@ EVENT_TYPE_PAYLOAD_CLASSES: dict[str, type[BaseModel]] = {
     "frames_captured": FramesCapturedPayload,
     "look": LookPayload,
     "observation": ObservationPayload,
+    "ruling": RulingPayload,
+    "acceptance": AcceptancePayload,
 }
 
 # The event_type vocabulary itself, read off EventEnvelope's own Literal
@@ -700,6 +757,8 @@ def make_event(
         "frames_captured",
         "look",
         "observation",
+        "ruling",
+        "acceptance",
     ],
     payload: (
         BeginStepPayload
@@ -718,6 +777,8 @@ def make_event(
         | FramesCapturedPayload
         | LookPayload
         | ObservationPayload
+        | RulingPayload
+        | AcceptancePayload
     ),
 ) -> EventEnvelope:
     """Create a timestamped EventEnvelope from a typed payload model.

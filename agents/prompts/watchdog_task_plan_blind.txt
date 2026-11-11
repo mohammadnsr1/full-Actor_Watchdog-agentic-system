@@ -1,0 +1,24 @@
+## Requirements
+
+{{INSTRUCTION_SPEC}}
+
+## Objects in scene
+
+{{OBJECT_IDS}}
+
+## Run notes
+
+{{RUN_NOTES}}
+
+---
+
+Begin your role. You have the requirements before anything moves: read them,
+work out which invariants must be watched for the whole episode and which
+acceptance contracts fall due at the end, fetch each part's contract once and
+keep it, and put the standing monitors in place. You are not told what the
+robot will do, in what order, or when; the cell's physical events and your own
+observations are how you learn where things stand.
+
+Record a finding the moment you have one. At the end of the episode, inspect
+acceptance from your own observations and record the episode's single final
+verdict, whether or not you recorded findings along the way.

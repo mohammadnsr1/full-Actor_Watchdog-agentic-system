@@ -28,6 +28,7 @@
   <exec_depend>cell_planning_service</exec_depend>
   <exec_depend>cell_platform_interfaces</exec_depend>
   <exec_depend>cell_backend_sim</exec_depend>
+  <exec_depend>cell_physical_events</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

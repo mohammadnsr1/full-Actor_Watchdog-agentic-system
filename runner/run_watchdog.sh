@@ -22,14 +22,22 @@ set -euo pipefail
 # assembly arguments are accepted for compatibility but must be s3 and 2.
 cd "$(dirname "$0")/.."
 
-scenario="${1:-s3}"
+scenario="${1:-plan_blind}"
 assembly="${2:-2}"
 
-if [ "$scenario" != "s3" ] || [ "$assembly" != "2" ]; then
-  echo "only scenario s3 with assembly 2 is available in this repo (got: $scenario $assembly)" >&2
+# s3         the unchanged WATCHDOG S3 session (Milestone 2 check; reads the
+#            step-bearing task file; the server now drops executor events, so
+#            it is only a liveness check of the copy)
+# plan_blind the Milestone 5 session: requirements file, plan-blind prompt
+case "$scenario" in
+  s3)         config="config/mcp/watchdog.mcp.json" ;;
+  plan_blind) config="config/mcp/watchdog.plan_blind.mcp.json" ;;
+  *) echo "scenario must be s3 or plan_blind (got: $scenario)" >&2; exit 1 ;;
+esac
+if [ "$assembly" != "2" ]; then
+  echo "only assembly 2 is available in this repo (got: $assembly)" >&2
   exit 1
 fi
-config="config/mcp/watchdog.mcp.json"
 settings="config/settings/watchdog.settings.json"
 
 # MODEL and EFFORT come from the environment, defaulting to the values in

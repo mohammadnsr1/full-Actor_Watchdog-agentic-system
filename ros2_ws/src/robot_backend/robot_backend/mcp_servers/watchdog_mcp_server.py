@@ -28,8 +28,10 @@ from rclpy.node import Node
 from robot_backend.contracts.loader import load_pick_contract
 from robot_backend.events.bus import EventBus
 from robot_backend.events.schema import (
+    AcceptancePayload,
     FramesCapturedPayload,
     KNOWN_EVENT_TYPES,
+    RulingPayload,
     RunVerdictPayload,
     VerdictPayload,
     available_event_type_definitions,
@@ -70,6 +72,9 @@ from robot_backend.watchdog.recorder import (
 from robot_backend.watchdog import session as session_helper
 from robot_backend.watchdog.timebase import wall_ns
 from robot_backend.mcp_servers import role_context
+from robot_backend.watchdog import requirements as _req
+from robot_backend.watchdog import rulings as _rulings
+from robot_backend.watchdog.physical import EPISODE_END_EVENT_TYPE, PHYSICAL_EVENT_KINDS
 
 # Image ring buffer bounds, env-configurable. A byte bound is required because
 # frame size varies with encoding and a count-only bound cannot protect memory.
@@ -100,96 +105,13 @@ def _env_float(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
-def _load_task_steps() -> dict[str, dict[str, Any]]:
-    """Load the active run's task YAML steps: block, keyed by step_id.
+def _load_requirements() -> dict[str, Any]:
+    """Load the WatchDog's requirements file (WATCHDOG_TASK_PATH).
 
-    grasp_width_m and grasp_center_offset are pure per-run conformance/command
-    data and live in the task instruction, not the registry (see
-    agents/tasks/*.yaml). WATCHDOG_TASK_PATH is exported by run_agent.py
-    before this process's MCP servers are spawned, so get_contract can read
-    the step data directly from the instruction file rather than have the
-    agent pass it as a tool argument. Fails loud: no fallback to defaults or
-    to a registry value, since there is no registry value anymore.
+    Plan-blind (Milestone 5): the file carries acceptance contracts and
+    invariants only. A file with a steps: block is refused by the loader.
     """
-    task_path = os.environ.get("WATCHDOG_TASK_PATH")
-    if not task_path:
-        raise RuntimeError(
-            "WATCHDOG_TASK_PATH is not set. get_contract needs it to read the "
-            "task instruction's steps: block (grasp_width_m and "
-            "grasp_center_offset are instruction-sourced, not registry-sourced). "
-            "run_agent.py exports this before launching the MCP servers -- "
-            "check that this process was started via run_agent.py --task ..."
-        )
-    with open(task_path) as f:
-        task = yaml.safe_load(f)
-    steps = task.get("steps") if isinstance(task, dict) else None
-    if not isinstance(steps, list):
-        raise ValueError(
-            f"task file {task_path!r} has no steps: list. Add a structured "
-            "steps: block (step_id, object_id, grasp_width_m, "
-            "grasp_center_offset) -- prose fields are not parsed for this data."
-        )
-    by_step_id: dict[str, dict[str, Any]] = {}
-    for entry in steps:
-        if not isinstance(entry, dict) or "step_id" not in entry:
-            raise ValueError(
-                f"task file {task_path!r} has a steps: entry missing step_id: {entry!r}"
-            )
-        by_step_id[entry["step_id"]] = entry
-    return by_step_id
-
-
-def _load_task_objects() -> dict[str, dict[str, Any]]:
-    """Collapse the task's steps: block into one spec per object_id.
-
-    A contract is static per-object reference data: every threshold in it is a
-    registry bound for that object, and grasp_width_m is that object's
-    conformance width. None of it changes as the run moves from step to step,
-    so there is one contract per object and it is addressed by object_id.
-
-    Two fields are folded out of the object's steps:
-
-    grasp_width_m is asserted to be identical across every step that names the
-    object. It describes the object's graspable geometry, not the step, so a
-    disagreement between two steps is an authoring error and raises here
-    rather than silently letting whichever step was asked first decide the
-    conformance bound.
-
-    contract_clause_groups is the union across the object's steps. Union, not
-    intersection: a group any step authored is a group that applies to this
-    object somewhere in the process, and the contract is the object's whole
-    specification rather than any one step's slice of it. Where in the process
-    each group is judged is the agent's to read from the process map and the
-    instruction, not something the shape of this return can say any more.
-    """
-    by_step_id = _load_task_steps()
-    by_object: dict[str, dict[str, Any]] = {}
-    for step_id, entry in by_step_id.items():
-        object_id = entry.get("object_id")
-        if not object_id:
-            continue
-        spec = by_object.setdefault(
-            object_id, {"object_id": object_id, "step_id": f"<object:{object_id}>"}
-        )
-        width = entry.get("grasp_width_m")
-        if width is not None:
-            seen = spec.get("grasp_width_m")
-            if seen is not None and float(seen) != float(width):
-                raise ValueError(
-                    f"object_id {object_id!r} is authored with conflicting "
-                    f"grasp_width_m across its steps ({seen} and {width}, the "
-                    f"latter at step_id {step_id!r}). grasp_width_m describes "
-                    f"the object, not the step, so it must agree everywhere "
-                    f"the object appears."
-                )
-            spec["grasp_width_m"] = width
-        groups = entry.get("contract_clause_groups")
-        if groups:
-            spec.setdefault("contract_clause_groups", [])
-            for g in groups:
-                if g not in spec["contract_clause_groups"]:
-                    spec["contract_clause_groups"].append(g)
-    return by_object
+    return _req.load_requirements()
 
 
 def _frame_to_png(frame: Any) -> bytes:
@@ -386,6 +308,52 @@ def _cell_block_for_contract() -> dict[str, Any]:
         return {"error": f"platform config unavailable: {exc}"}
 
 
+# Event types a plan-blind wait can name: physical events from the cell, the
+# episode-end notice, and the WatchDog's own types (executor types are gone).
+_PHYSICAL_EVENT_DESCRIPTIONS: dict[str, str] = {
+    "contact_made": "The gripper closed on something (effort proxy or contact report).",
+    "contact_lost": "The gripper stopped contacting what it held.",
+    "part_lifted": "A part rose above its rest height close to the TCP.",
+    "part_released": "A held part separated from the TCP.",
+    "part_settled": "A released part came to rest.",
+    "part_approaching_feature": "A held part came within the approach distance of one of its feature frames.",
+    "part_engaged_feature": "A held part came within the engage distance of one of its feature frames.",
+    "effort_rising": "The gripper effort joint's effort is rising faster than the configured rate.",
+    "motion_started": "The arm started moving (joint speed above threshold).",
+    "motion_stopped": "The arm stopped moving.",
+    "workspace_object_appeared": "The WatchDog camera reported an object id that is not a known part.",
+}
+_WATCHDOG_WAITABLE_TYPES: tuple[str, ...] = (
+    "monitor_fire", "monitor_armed", "monitor_disarmed", "halt", "verdict", "run_verdict",
+    "watchdog_ready", "frames_captured", "look", "observation", "ruling", "acceptance",
+)
+_WAITABLE_EVENT_TYPES: tuple[str, ...] = (
+    *PHYSICAL_EVENT_KINDS, EPISODE_END_EVENT_TYPE, *_WATCHDOG_WAITABLE_TYPES,
+)
+
+
+def _waitable_event_type_definitions() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for kind in PHYSICAL_EVENT_KINDS:
+        out.append({
+            "event_type": kind,
+            "description": _PHYSICAL_EVENT_DESCRIPTIONS.get(kind, ""),
+            "payload_fields": {"kind": "str", "scene_ids": "list[str]", "source": "str", "confidence": "float", "value": "float", "detail": "str", "sim_time": "float"},
+            "origin": "cell",
+        })
+    out.append({
+        "event_type": EPISODE_END_EVENT_TYPE,
+        "description": "The episode runner declared the episode over; acceptance is now due.",
+        "payload_fields": {"kind": "str", "detail": "str"},
+        "origin": "episode_runner",
+    })
+    by_type = {d["event_type"]: d for d in available_event_type_definitions()}
+    for name in _WATCHDOG_WAITABLE_TYPES:
+        if name in by_type:
+            out.append(by_type[name])
+    return out
+
+
 def _tool_for(*scenarios: str):
     """mcp.tool() when this scenario serves the tool, else a no-op decorator.
 
@@ -422,12 +390,25 @@ class WatchDogContext:
     # which is the retrospective RGB history behind capture_frames -- see
     # image_buffer.py's module docstring for why both exist.
     camera_streams: CameraStreams
-    # Lazily populated on first get_contract call from WATCHDOG_TASK_PATH's
-    # steps: block, collapsed to one spec per object_id -- see
-    # _load_task_objects. Contracts are addressed by object, not by step: the
-    # steps: block remains the watchdog's map of the expected process, but it
-    # is no longer a lookup key for loading a contract.
-    task_objects: dict[str, dict[str, Any]] | None = None
+    # Plan-blind (Milestone 5).
+    # requirements: the acceptance/invariants file (WATCHDOG_TASK_PATH), loaded
+    # lazily on first use; parts: config/parts/watchdog_parts.yaml.
+    requirements: dict[str, Any] | None = None
+    parts: dict[str, Any] | None = None
+    # watchdog.mode (record_only | halt_enabled) and watchdog.consult.
+    mode: str = "record_only"
+    consult: bool = False
+    # Rulings and halts go out on the notices topic through this.
+    notices: Any = None
+    # camera1 (wrist, the executor's pipeline): cue-only pose source and the
+    # raw frame streams for look(camera="camera1"). None when camera1 is
+    # disabled in the cameras config.
+    cue_poses: Any = None
+    camera1_streams: Any = None
+    # Object ids whose camera1 pose the agent asked for through the cue tool,
+    # with the wall_ns of the last cue. Any verdict citing a camera1 source is
+    # flagged shared_source; this set lets the record show what was cued.
+    cue_used: dict[str, int] = None  # type: ignore[assignment]
 
 
 _CONTEXT: WatchDogContext | None = None
@@ -452,23 +433,51 @@ _VALID_VERDICTS = {
 # where WatchDog could not establish that the step was sound -- is something
 # that happened to this run and belongs on its timeline.
 _NON_FINDING_VERDICTS = {"conformant", "valid_variation"}
-# Per-process record of step_ids a verdict has already been published for.
-# Detection, not prevention -- a second verdict for a retried step may be
-# legitimate, and silently dropping it would be worse than recording it as
-# suspicious. Guarded by _CONTEXT_LOCK rather than its own lock since it is
-# always touched alongside _CONTEXT.
-_RECORDED_VERDICT_STEP_IDS: set[str] = set()
+# Per-process record of subjects (part ids or "workspace") a finding has
+# already been published for. Detection, not prevention: a second finding on
+# the same part may be legitimate. Guarded by _CONTEXT_LOCK.
+_RECORDED_VERDICT_SUBJECTS: set[str] = set()
 
-# Sentinel terminal status for a run that produced no run_ended event at all.
-# Deliberately a non-null string rather than None: None is indistinguishable
-# from "the field was never populated", and the scorer needs to tell a crash
-# apart from a bookkeeping miss.
-_NO_TERMINAL_EVENT = "no_terminal_event"
-# Consecutive wait_for_event timeouts after which the server finalizes the run
-# ITSELF. Not a suggestion to the agent -- see _timeout_or_finalize. Two, so a
-# single long legitimate gap (the cell gate can block up to gate_timeout_sec,
-# 90s, well under one 180s wait) can never reach it.
+# How the episode ended, as observed. "episode_end" when the runner's notice
+# arrived on the notices topic; this sentinel when the run was finalized
+# without one. Never the executor's own status: this process does not hear
+# the executor (plan-blind, Milestone 5).
+_NO_TERMINAL_EVENT = "no_episode_end"
+# After the episode_end notice, the number of consecutive wait_for_event
+# timeouts the server allows before it records the incomplete rollup itself.
+# Before the notice there is NO silence-based termination: an hour-long quiet
+# episode is a quiet episode, not a crash. See _timeout_or_finalize.
 _MAX_CONSECUTIVE_TIMEOUTS = 2
+# Evidence source names that belong to the executor's pipeline. A verdict or
+# ruling citing any of them is flagged shared_source: it rests on the thing
+# WatchDog is supposed to be independent of.
+_SHARED_SOURCE_PREFIXES = ("camera1", "executor", "wrist")
+# Source names a verdict may cite. Anything else is rejected so the record's
+# evidence tags stay a closed vocabulary.
+_EVIDENCE_SOURCES = (
+    "camera2_pose", "ground_truth", "joint_state", "robot_tf", "effort_proxy",
+    "contact_report", "look:camera2", "look:camera1", "camera1_pose_cue",
+    "monitor_fire", "physical_event", "acceptance_inspection",
+)
+
+
+def _is_shared_source(sources: list[str]) -> bool:
+    return any(str(s).startswith(_SHARED_SOURCE_PREFIXES) or ":camera1" in str(s) for s in sources)
+
+
+def _validate_evidence(evidence_sources: Any, missing_evidence: Any) -> tuple[list[str], list[str]]:
+    if not isinstance(evidence_sources, list) or not evidence_sources or not all(isinstance(s, str) and s for s in evidence_sources):
+        raise ValueError(
+            "evidence_sources must be a non-empty list of source names from "
+            f"{list(_EVIDENCE_SOURCES)}; a verdict that rests on nothing is not a verdict."
+        )
+    unknown = sorted(set(evidence_sources) - set(_EVIDENCE_SOURCES))
+    if unknown:
+        raise ValueError(f"unknown evidence_sources {unknown}; valid: {list(_EVIDENCE_SOURCES)}")
+    missing = list(missing_evidence or [])
+    if not all(isinstance(m, str) for m in missing):
+        raise ValueError("missing_evidence must be a list of strings")
+    return list(evidence_sources), missing
 
 
 @dataclass
@@ -481,28 +490,29 @@ class _RunTermination:
     is bounding a run when things have gone wrong cannot be implemented as an
     instruction to the agent that has already stopped behaving.
 
-    observed_terminal_status is populated from the run_ended event as it is
-    drained, NOT from an argument the agent passes. The agent getting it right
-    on a clean run and wrong on an aborted one is exactly what happened before
-    this existed.
+    Plan-blind (Milestone 5): the episode ends when the episode runner's
+    episode_end notice arrives on the notices topic. Nothing the executor
+    publishes reaches this process.
     """
 
     observed_terminal_status: str | None = None
-    steps_seen: list[str] = None  # type: ignore[assignment]
-    # step_ids a step-scoped finding was recorded for, in order, de-duplicated.
-    # Ordered, unlike _RECORDED_VERDICT_STEP_IDS, because it is reported on the
-    # final run_verdict as the run's finding timeline and the sequence is part
-    # of what a scorer reads. Populated from observed record_verdict calls, not
-    # from anything the agent asserts at the end.
+    episode_ended: bool = False
+    # Subjects (part ids / "workspace") a finding was recorded for, in order,
+    # de-duplicated: the run's finding timeline on the final run_verdict.
     findings_recorded: list[str] = None  # type: ignore[assignment]
     consecutive_timeouts: int = 0
     finalized: bool = False
+    # Evidence bookkeeping for the record (Milestone 5).
+    shared_source_count: int = 0
+    missing_evidence_count: int = 0
+    acceptance: dict[str, Any] | None = None
+    rulings: list[dict[str, Any]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        if self.steps_seen is None:
-            self.steps_seen = []
         if self.findings_recorded is None:
             self.findings_recorded = []
+        if self.rulings is None:
+            self.rulings = []
 
 
 _RUN = _RunTermination()
@@ -526,15 +536,10 @@ def _resolve_observed_terminal_status(ctx: Any) -> str | None:
     can invent a status, so consulting both can only ever find more truth.
     """
     recorder = getattr(ctx, "recorder", None)
-    if recorder is not None:
-        try:
-            status = recorder.observed_terminal_status()
-        except Exception:  # pragma: no cover - never let bookkeeping break a verdict
-            status = None
-        if status:
-            return status
+    if recorder is not None and bool(getattr(recorder, "episode_ended", False)):
+        return EPISODE_END_EVENT_TYPE
     with _RUN_LOCK:
-        return _RUN.observed_terminal_status
+        return EPISODE_END_EVENT_TYPE if _RUN.episode_ended else _RUN.observed_terminal_status
 
 
 def _observe_drained_events(drained: dict[str, Any]) -> None:
@@ -554,17 +559,9 @@ def _observe_drained_events(drained: dict[str, Any]) -> None:
         for rec in records:
             if not isinstance(rec, dict):
                 continue
-            envelope = rec.get("envelope") or {}
-            payload = envelope.get("payload") or {}
-            etype = rec.get("event_type")
-            if etype == "run_ended":
-                status = payload.get("status")
-                if isinstance(status, str) and status:
-                    _RUN.observed_terminal_status = status
-            elif etype in ("begin_step", "end_step"):
-                step_id = payload.get("step_id")
-                if isinstance(step_id, str) and step_id and step_id not in _RUN.steps_seen:
-                    _RUN.steps_seen.append(step_id)
+            if rec.get("event_type") == EPISODE_END_EVENT_TYPE:
+                _RUN.episode_ended = True
+                _RUN.observed_terminal_status = EPISODE_END_EVENT_TYPE
 # "<section>.<field>", matching how the loader derives clause_id in
 # contracts/loader.py's _make_clause -- e.g. "effects.object_lift_height_m".
 _CLAUSE_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")
@@ -613,13 +610,13 @@ def _validate_run_clause_results(clause_results: list[dict[str, Any]]) -> None:
     """
     _validate_clause_results(clause_results)
     for i, entry in enumerate(clause_results):
-        step_id = entry.get("step_id")
-        if not isinstance(step_id, str) or not step_id:
+        part = entry.get("part")
+        if not isinstance(part, str) or not part:
             raise ValueError(
-                f"clause_results[{i}] has no usable step_id ({step_id!r}). A "
-                f"run-scoped verdict combines several steps, and clause_id "
-                f"alone cannot say which step an entry came from -- every "
-                f"entry must name its own step_id."
+                f"clause_results[{i}] has no usable part ({part!r}). A "
+                f"run-scoped verdict combines several parts, and clause_id "
+                f"alone cannot say which part an entry concerns -- every "
+                f"entry must name its own part (or \"workspace\")."
             )
 
 
@@ -664,6 +661,31 @@ def _build_camera_pipeline(
     except Exception as exc:
         node.get_logger().warning(f"camera streams attach failed (non-fatal): {exc}")
     return image_buffer, image_manager, camera_streams
+
+
+def _build_camera1_streams(node: Any, image_cb_group: Any) -> Any | None:
+    """Raw frames of camera1 (the wrist camera) for look(camera="camera1").
+
+    Frames only: camera1's POSES never enter the recorder; they are reachable
+    only through wrist_pose_cue, which marks them as the executor's pipeline.
+    Returns None when camera1 is disabled in config/cameras/<platform>.yaml.
+    """
+    from robot_backend.cell_config import platform as _platform
+
+    try:
+        p = _platform()
+        if not p.camera_enabled("camera1"):
+            return None
+        rgb = p.camera_topic("camera1", "rgb")
+    except Exception as exc:
+        node.get_logger().warning(f"camera1 streams not built: {exc}")
+        return None
+    streams = CameraStreams(logger=node.get_logger())
+    try:
+        streams.attach(node, image_cb_group, subscribe_rgb=True, rgb_candidates=(rgb,))
+    except Exception as exc:
+        node.get_logger().warning(f"camera1 streams attach failed (non-fatal): {exc}")
+    return streams
 
 
 def _ensure_watchdog() -> WatchDogContext:
@@ -723,15 +745,38 @@ def _ensure_watchdog() -> WatchDogContext:
 
         _cell_cfg, _ = load_cell_config()
         _halt_cfg = _cfg_section(_cell_cfg, "watchdog", "halt")
+        _wd_cfg = _cfg_section(_cell_cfg, "watchdog")
+        _mode = str(_wd_cfg.get("mode", "record_only") or "record_only")
+        _consult = bool(_wd_cfg.get("consult", False))
         _targets = [str(_platform().get("motion", "cancel_service"))]
         _targets += [str(t) for t in (_halt_cfg.get("extra_cancel_targets") or []) if t]
+        # Rulings and real halts are announced on the notices topic; the
+        # planner subscribes only when watchdog.consult is on.
+        notices = _rulings.NoticePublisher(node, _platform().topic("watchdog_notices"))
         halt_client = HaltClient(
             node=node,
             event_bus=event_bus,
             callback_group=client_cb_group,
             timeout_sec=float(_halt_cfg.get("timeout_s", 1.0)),
             cancel_targets=_targets,
+            mode=_mode,
+            notices=notices if _consult else None,
         )
+        node.get_logger().info(f"WatchDog mode={_mode} consult={_consult} halt targets={_targets}")
+        # camera1 (wrist) cue source: the executor's pose pipeline, never the
+        # recorder's. Disabled camera -> no cue tool data.
+        cue_poses = None
+        try:
+            if _platform().camera_enabled("camera1"):
+                from cell_platform_interfaces.topic_poses import TopicPoseSource
+
+                cue_poses = TopicPoseSource(
+                    node, _platform().get("poses", "executor_topic"), camera="camera1",
+                    source="camera1_pose_cue", callback_group=client_cb_group,
+                )
+        except Exception as exc:
+            node.get_logger().warning(f"camera1 cue source not built: {exc}")
+        camera1_streams = _build_camera1_streams(node, ReentrantCallbackGroup())
         ready_client = ReadyClient(
             node=node,
             event_bus=event_bus,
@@ -789,8 +834,35 @@ def _ensure_watchdog() -> WatchDogContext:
             image_buffer=image_buffer,
             image_manager=image_manager,
             camera_streams=camera_streams,
+            mode=_mode,
+            consult=_consult,
+            notices=notices,
+            cue_poses=cue_poses,
+            camera1_streams=camera1_streams,
+            cue_used={},
         )
         return _CONTEXT
+
+
+def _requirements(ctx: WatchDogContext) -> dict[str, Any]:
+    if ctx.requirements is None:
+        ctx.requirements = _load_requirements()
+    return ctx.requirements
+
+
+def _parts(ctx: WatchDogContext) -> dict[str, Any]:
+    if ctx.parts is None:
+        ctx.parts = _req.load_watchdog_parts()
+    return ctx.parts
+
+
+def _effort_joint() -> str | None:
+    from robot_backend.cell_config import cell_block
+
+    try:
+        return cell_block().get("gripper", {}).get("effort_joint_name")
+    except Exception:
+        return None
 
 
 def _shutdown_watchdog() -> None:
@@ -1244,6 +1316,9 @@ def _drain_wait(
     fires = ctx.engine.pop_fires()
     if fires:
         return {"wake": "monitor_fire", "fire": fires[0], "additional_fires": fires[1:]}
+    wakes = ctx.engine.pop_wakes()
+    if wakes:
+        return {"wake": "wake_condition", "matched": wakes[0], "additional_matches": wakes[1:]}
     events = ctx.recorder.pop_wait_events(event_types)
     if events:
         first = events[0]
@@ -1258,21 +1333,24 @@ def _drain_wait(
 
 
 def _observed_findings() -> list[str]:
-    """step_ids the server saw a step-scoped finding recorded for, in order."""
+    """subjects the server saw a finding recorded for, in order."""
     with _RUN_LOCK:
         return list(_RUN.findings_recorded)
 
 
-def _note_finding(step_id: str) -> None:
-    """Record that a step-scoped finding was published for this step.
-
-    Appended in call order and de-duplicated: a step with two fires produces
-    two verdicts but is one place the run went wrong, and the final rollup
-    reports places, not events.
-    """
+def _note_finding(subject: str) -> None:
+    """Record that a finding was published for this subject (de-duplicated)."""
     with _RUN_LOCK:
-        if step_id not in _RUN.findings_recorded:
-            _RUN.findings_recorded.append(step_id)
+        if subject not in _RUN.findings_recorded:
+            _RUN.findings_recorded.append(subject)
+
+
+def _note_evidence(shared: bool, missing: list[str]) -> None:
+    with _RUN_LOCK:
+        if shared:
+            _RUN.shared_source_count += 1
+        if missing:
+            _RUN.missing_evidence_count += 1
 
 
 def _publish_run_verdict(
@@ -1280,11 +1358,13 @@ def _publish_run_verdict(
     *,
     verdict: str,
     clause_results: list[dict[str, Any]],
-    steps_covered: list[str],
+    parts_covered: list[str],
     explanation: str,
     claimed_outcome: str | None,
     executor_terminal_status: str | None,
     findings_during_run: list[str] | None = None,
+    evidence_sources: list[str] | None = None,
+    missing_evidence: list[str] | None = None,
 ) -> Any:
     """Build and publish one run-scoped verdict event. Returns the envelope.
 
@@ -1299,14 +1379,26 @@ def _publish_run_verdict(
     # already read under the lock; omitting them re-reads it here.
     findings = list(findings_during_run if findings_during_run is not None
                     else _observed_findings())
+    sources = list(evidence_sources or [])
+    missing = list(missing_evidence or [])
+    with _RUN_LOCK:
+        shared_count = _RUN.shared_source_count
+        missing_count = _RUN.missing_evidence_count
+        acceptance = _RUN.acceptance
     payload = RunVerdictPayload(
         verdict=verdict,
         claimed_outcome=claimed_outcome,
         clause_results=clause_results,
-        steps_covered=steps_covered,
+        parts_covered=parts_covered,
         explanation=explanation,
         executor_terminal_status=executor_terminal_status,
         findings_during_run=findings,
+        evidence_sources=sources,
+        missing_evidence=missing,
+        shared_source=_is_shared_source(sources),
+        shared_source_count=shared_count,
+        missing_evidence_count=missing_count,
+        acceptance=acceptance,
         # A run "recovered" only if it went wrong AND ended right. Always
         # computed, never a parameter: it is a function of the other two
         # fields, and allowing it to be passed would allow it to disagree
@@ -1319,23 +1411,20 @@ def _publish_run_verdict(
 
 
 def _timeout_or_finalize(ctx: WatchDogContext, command: str, t0: float) -> dict[str, Any]:
-    """Return a wait_for_event timeout, finalizing the run if it has run out.
+    """Return a wait_for_event timeout, finalizing the run only after the
+    episode has ended.
 
-    THE TERMINATION GUARANTEE. The failure this exists to stop: a real run
-    where the executor was killed mid-step, both 180s waits timed out exactly
-    as designed, and the agent read each empty result as "keep waiting" --
-    still looping at 456s, no verdict ever recorded, no exit. The timeout
-    firing was never the problem; the timeout firing not CAUSING anything was.
-
-    So the server does not ask. On the Nth consecutive timeout it records the
-    incomplete rollup itself, off its own observed state, and every later
-    wait_for_event returns immediately instead of blocking another full
-    timeout. An agent that ignores the terminal result cannot hang the run and
-    cannot cost it its verdict, because the verdict is already written.
+    Plan-blind termination (Milestone 5). Before the episode runner's
+    episode_end notice arrives, a timeout is just a timeout: the WatchDog
+    keeps watching however long the episode is quiet, and nothing counts
+    down. After the notice, the agent is expected to inspect acceptance and
+    record the run verdict; if it falls silent for _MAX_CONSECUTIVE_TIMEOUTS
+    consecutive waits instead, the server records run_verdict=incomplete
+    itself so every episode ends with exactly one final verdict.
     """
     waited = time.monotonic() - t0
+    episode_ended = bool(getattr(ctx.recorder, "episode_ended", False))
     with _RUN_LOCK:
-        # Already finalized: never block again, and never record twice.
         if _RUN.finalized:
             return _ok(
                 command,
@@ -1345,8 +1434,22 @@ def _timeout_or_finalize(ctx: WatchDogContext, command: str, t0: float) -> dict[
                 run_finalized=True,
                 finalized_by="server",
                 message=(
-                    "This run is over and its verdict is already recorded. Stop "
+                    "This episode is over and its verdict is already recorded. Stop "
                     "calling tools and end your turn."
+                ),
+            )
+        if episode_ended:
+            _RUN.episode_ended = True
+        if not _RUN.episode_ended:
+            _RUN.consecutive_timeouts = 0
+            return _ok(
+                command,
+                wake="timeout",
+                waited_sec=waited,
+                episode_ended=False,
+                message=(
+                    "No physical event, monitor fire, or wake-condition match within the "
+                    "timeout. The episode has not ended (no episode_end notice)."
                 ),
             )
         _RUN.consecutive_timeouts += 1
@@ -1356,76 +1459,45 @@ def _timeout_or_finalize(ctx: WatchDogContext, command: str, t0: float) -> dict[
                 command,
                 wake="timeout",
                 waited_sec=waited,
+                episode_ended=True,
                 consecutive_timeouts=count,
                 timeouts_before_forced_finalize=_MAX_CONSECUTIVE_TIMEOUTS - count,
                 message=(
-                    "No event within the timeout. If the executor has stopped "
-                    "without a run_ended event it has probably crashed: finalize "
-                    f"now. After {_MAX_CONSECUTIVE_TIMEOUTS - count} more such "
-                    "timeout(s) this server will record the incomplete rollup "
-                    "for you and end the run."
+                    "The episode has ended (episode_end notice received) and nothing "
+                    f"further arrived. After {_MAX_CONSECUTIVE_TIMEOUTS - count} more such "
+                    "timeout(s) this server will record run_verdict=incomplete itself."
                 ),
             )
-        # Nth timeout: finalize here, whatever the agent does next.
-        steps = list(_RUN.steps_seen)
         _RUN.finalized = True
+        acceptance = _RUN.acceptance
 
-    # Resolved outside the lock, and from the same any-delivery-path source
-    # record_run_verdict uses. This path chooses between two very different
-    # explanations, so reading only the drain capture could assert "the
-    # executor probably crashed" about a run that had cleanly reported
-    # aborted through get_events.
-    observed = _resolve_observed_terminal_status(ctx)
-    terminal_status = observed or _NO_TERMINAL_EVENT
     findings = _observed_findings()
-    # Findings are stated here rather than left implicit because this
-    # explanation is the only account a server-finalized run gets. Saying "no
-    # clause check failed" unconditionally, as this did, would have been flatly
-    # untrue on a run that recorded findings and then went silent.
-    if findings:
-        findings_note = (
-            f" Findings were recorded during the run at: {findings}. Those step "
-            f"verdicts stand as the run's timeline; this rollup does not "
-            f"re-judge them, and it cannot say whether they were subsequently "
-            f"corrected, because the run stopped before that could be observed."
-        )
-    else:
-        findings_note = (
-            " No monitor fire was adjudicated and no clause check failed on the "
-            "evidence gathered."
-        )
-    if observed is None:
-        explanation = (
-            f"Run terminated on the no-event timeout after "
-            f"{_MAX_CONSECUTIVE_TIMEOUTS} consecutive waits with no executor "
-            f"event and no run_ended: the executor probably crashed. Recorded "
-            f"by the server, not the monitoring agent. Steps observed before "
-            f"the silence: {steps or 'none'}.{findings_note} The verdict is "
-            f"incomplete rather than non_conformant because the run stopped "
-            f"before its end-state could exist, which is a statement about "
-            f"reachability, not about whether anything went wrong."
-        )
-    else:
-        explanation = (
-            f"Run ended with executor status {observed!r}, and the monitoring "
-            f"agent did not record the final verdict before falling silent for "
-            f"{_MAX_CONSECUTIVE_TIMEOUTS} consecutive timeouts. Recorded by the "
-            f"server as a backstop. Steps observed: {steps or 'none'}."
-            f"{findings_note} The server cannot measure the end-state itself, "
-            f"so this is incomplete: it records that the run terminated without "
-            f"an end-state assessment, not that the end-state was wrong."
-        )
-
+    findings_note = (
+        f" Findings were recorded during the episode for: {findings}." if findings
+        else " No finding was recorded during the episode."
+    )
+    acceptance_note = (
+        f" An acceptance inspection was recorded (overall={acceptance.get('overall')})." if acceptance
+        else " No acceptance inspection was recorded."
+    )
+    explanation = (
+        "Episode ended (episode_end notice) and the monitoring agent did not record "
+        f"the final verdict within {_MAX_CONSECUTIVE_TIMEOUTS} consecutive wait timeouts. "
+        "Recorded by the server as a backstop. The server does not judge the end-state, "
+        f"so this is incomplete, not non_conformant.{findings_note}{acceptance_note}"
+    )
     try:
         _publish_run_verdict(
             ctx,
             verdict="incomplete",
             clause_results=[],
-            steps_covered=steps,
+            parts_covered=[],
             explanation=explanation,
             claimed_outcome=None,
-            executor_terminal_status=terminal_status,
+            executor_terminal_status=EPISODE_END_EVENT_TYPE,
             findings_during_run=findings,
+            evidence_sources=["acceptance_inspection"] if acceptance else [],
+            missing_evidence=["run verdict not recorded by the agent"],
         )
         recorded = True
     except Exception as exc:  # pragma: no cover - publish failure is not fatal
@@ -1441,14 +1513,11 @@ def _timeout_or_finalize(ctx: WatchDogContext, command: str, t0: float) -> dict[
         finalized_by="server",
         verdict_recorded=recorded,
         verdict="incomplete",
-        executor_terminal_status=terminal_status,
-        steps_covered=steps,
+        executor_terminal_status=EPISODE_END_EVENT_TYPE,
         findings_during_run=findings,
         message=(
-            "Run terminated: no executor event across "
-            f"{_MAX_CONSECUTIVE_TIMEOUTS} consecutive timeouts. The server has "
-            "recorded run_verdict=incomplete on your behalf. Do not call "
-            "record_run_verdict. Stop calling tools and end your turn."
+            "Episode terminated: the server has recorded run_verdict=incomplete on "
+            "your behalf. Do not call record_run_verdict. Stop calling tools and end your turn."
         ),
     )
 
@@ -1547,22 +1616,18 @@ if mcp is not None:
         command = "get_contract"
         try:
             ctx = _ensure_watchdog()
-            if ctx.task_objects is None:
-                ctx.task_objects = _load_task_objects()
-            object_spec = ctx.task_objects.get(object_id)
-            if object_spec is None:
-                raise ValueError(
-                    f"object_id {object_id!r} is not named by any step in the "
-                    f"running task. Objects with a contract: "
-                    f"{sorted(ctx.task_objects)}"
-                )
+            object_spec = _req.part_spec_for_contract(_requirements(ctx), object_id)
             contract = load_pick_contract(object_id, object_spec)
             acm_pairs = ctx.registry.get("acm_allowed_object_pairs", [])
+            parts = _parts(ctx)
             return _ok(
                 command,
                 object_id=object_id,
                 contract=contract.model_dump(mode="json"),
                 raw_spec=_object_spec(ctx, object_id),
+                placement_frame=object_spec.get("placement_frame"),
+                limits_for_platform=_req.part_limits(parts, object_id),
+                tolerances=_req.part_tolerances(parts, object_id),
                 acm_allowed_object_pairs=acm_pairs if isinstance(acm_pairs, list) else [],
                 cell=_cell_block_for_contract(),
                 object_frames=ctx.recorder.object_frames,
@@ -1572,7 +1637,11 @@ if mcp is not None:
 
     @mcp.tool()
     def get_execution_state() -> dict[str, Any]:
-        """Return buffered recorder counts, current step, monitors, and last event.
+        """Return the cell's physical state as this process observes it:
+        whether the arm is moving, the part currently held (from physical
+        events), the last physical event and per-kind counts, buffered
+        recorder counts, armed monitors and wake conditions, halts so far,
+        the WatchDog mode, and whether the episode has ended.
 
         Covers only the objects and frames registered for this cell; it
         cannot show anything else that is in the workspace.
@@ -1583,14 +1652,22 @@ if mcp is not None:
         command = "get_execution_state"
         try:
             ctx = _ensure_watchdog()
-            events = ctx.recorder.latest_events(1)
+            physical = ctx.recorder.physical_state()
             return _ok(
                 command,
                 now_wall_ns=wall_ns(),
-                current_step_id=ctx.recorder.current_step(),
+                motion_active=physical["motion_active"],
+                held_part=ctx.engine.held_object_id(),
+                last_physical_event=physical["last_physical_event"],
+                physical_event_counts=physical["physical_event_counts"],
+                episode_ended=physical["episode_ended"],
+                pose_source=physical["pose_source"],
+                mode=ctx.mode,
+                consult=ctx.consult,
                 counts=ctx.recorder.counts(),
                 armed_monitors=ctx.engine.snapshot(),
-                last_executor_event=events[-1]["envelope"] if events else None,
+                wake_conditions=ctx.engine.wake_snapshot(),
+                halts=ctx.halt_client.list_halts(),
                 tf_staleness_counters=ctx.recorder.tf_counters(),
             )
         except Exception as exc:
@@ -2244,7 +2321,15 @@ if mcp is not None:
         timeout_sec: float = 180.0,
         event_types: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Block until a monitor fire, an executor event of the requested types, or timeout.
+        """Block until a monitor fire, a wake-condition match, a physical event
+        of the requested types, the episode-end notice, or timeout.
+
+        wake is one of monitor_fire, wake_condition, a physical event kind
+        (then `event` carries it), episode_end, timeout, or terminated.
+        A timeout before the episode has ended means nothing happened in the
+        window; it does not mean the episode is over. After the episode_end
+        notice, two consecutive timeouts make the server record
+        run_verdict=incomplete itself and every later call returns at once.
 
         A monitor DYING also wakes this call: a monitor_disarmed event with an
         authored_* reason (authored_timeout, authored_bad_return,
@@ -2272,12 +2357,12 @@ if mcp is not None:
         command = "wait_for_event"
         try:
             if event_types:
-                unknown = sorted(set(event_types) - set(KNOWN_EVENT_TYPES))
+                unknown = sorted(set(event_types) - set(_WAITABLE_EVENT_TYPES))
                 if unknown:
                     return _error(
                         command,
                         f"unknown event_types {unknown}; valid event types are "
-                        f"{sorted(KNOWN_EVENT_TYPES)}. Call available_event_types() "
+                        f"{sorted(_WAITABLE_EVENT_TYPES)}. Call available_event_types() "
                         f"for descriptions and payload fields.",
                         event_types=event_types,
                     )
@@ -2363,7 +2448,7 @@ if mcp is not None:
         """
         command = "available_event_types"
         try:
-            return _ok(command, event_types=available_event_type_definitions())
+            return _ok(command, event_types=_waitable_event_type_definitions())
         except Exception as exc:
             return _error(command, exc)
 
@@ -2482,8 +2567,14 @@ if mcp is not None:
     # replaced by a preview these Read-denied sessions cannot open -- i.e. the
     # images would be silently LOST to the agent. See the constant's own note.
     @mcp.tool(structured_output=False, annotations=_IMAGE_RESULT_ANNOTATIONS)
-    def look(reason: str, views: list[str] | None = None, max_width: int = 640):
+    def look(reason: str, views: list[str] | None = None, max_width: int = 640, camera: str = "camera2"):
         """SEE the workspace now: returns live camera frames as images you can read.
+
+        camera selects the source: "camera2" (the table camera, WatchDog's
+        own channel; default) or "camera1" (the wrist camera; its frames are
+        raw pixels of the executor's camera, and a verdict that rests on them
+        must cite look:camera1, which marks it shared_source). camera1 frames
+        are unavailable when that camera is disabled on this platform.
 
         This is the tool that lets you actually look. It returns image content --
         the frames reach you as pictures, not as paths or numbers. Use it when a
@@ -2541,18 +2632,26 @@ if mcp is not None:
         # about why it cannot see.
         def _deps() -> LookDeps:
             ctx = _ensure_watchdog()
+            if camera == "camera1":
+                if ctx.camera1_streams is None:
+                    raise RuntimeError("camera1 is disabled on this platform (config/cameras); no wrist frames")
+                streams = ctx.camera1_streams
+            elif camera == "camera2":
+                streams = ctx.camera_streams
+            else:
+                raise ValueError('camera must be "camera2" or "camera1"')
             return LookDeps(
-                streams=ctx.camera_streams,
+                streams=streams,
                 session_dir=ctx.session_dir,
                 role="watchdog",
-                file_prefix="look_",
+                file_prefix=f"look_{camera}_",
                 publish_event=ctx.event_bus.publish,
-                current_step_id=ctx.recorder.current_step,
+                current_step_id=None,
                 logger=ctx.node.get_logger(),
             )
 
         return _run_look(
-            _deps, reason=reason, views=views, max_width=max_width,
+            _deps, reason=f"[{camera}] {reason}", views=views, max_width=max_width,
             role="watchdog",
         )
 
@@ -2724,14 +2823,18 @@ if mcp is not None:
 
     @mcp.tool()
     def halt_execution(detail: str) -> dict[str, Any]:
-        """Cancel active MoveGroup goals through the WatchDog halt path."""
+        """Cancel the arm's active trajectory goal through the platform's
+        motion cancel service and record a halt with a halt_id.
+
+        In watchdog.mode record_only the halt is recorded but nothing is
+        cancelled (the result says suppressed: true). Nothing is published to
+        replace the cancelled motion; the gripper is left alone.
+        """
         command = "halt_execution"
         try:
             ctx = _ensure_watchdog()
-            result = ctx.halt_client.halt(
-                "agent_manual", detail, step_id=ctx.recorder.current_step()
-            )
-            return _ok(command, result=result)
+            result = ctx.halt_client.halt("agent_manual", detail)
+            return _ok(command, result=result, halt_id=result.get("halt_id"))
         except Exception as exc:
             return _error(command, exc)
 
@@ -2759,38 +2862,24 @@ if mcp is not None:
             return _error(command, exc)
 
     @mcp.tool()
-    def signal_ready(
-        scope: str,
-        step_id: str | None = None,
-        phase: str | None = None,
-    ) -> dict[str, Any]:
-        """Publish a readiness signal for a run, step, or phase.
+    def signal_ready(scope: str = "run") -> dict[str, Any]:
+        """Publish the run-scope readiness signal.
 
-        Calls the cell's /cell/signal_ready service (releasing any executor
-        blocked in request_go for this scope) and publishes a watchdog_ready
-        event to the topic for the record.
+        Calls the cell's signal_ready service (releasing the episode gate)
+        and publishes a watchdog_ready event for the record. Only scope
+        "run" exists: this process knows no steps or phases.
 
-        For scope="run", this first verifies the recorder buffers are warm:
-        at least one buffered pose for every object the registry declares,
-        and a non-empty joint-state sample buffer. If either is empty, the
-        signal is refused with a clear error rather than sent -- this is the
-        warm-up race in which a monitor could arm against a recorder that
-        has not sampled anything yet.
-
-        Parameters
-        ----------
-        scope:
-            One of "run", "step", "phase".
-        step_id:
-            Required for scope "step" or "phase".
-        phase:
-            Required for scope "phase".
+        The signal is sent only once the recorder buffers are warm: at least
+        one buffered pose for every enabled registry object on the WatchDog
+        pose channel, and a non-empty joint-state buffer. Otherwise it is
+        refused with the cold ids named.
         """
         command = "signal_ready"
-        _VALID_SCOPES = {"run", "step", "phase"}
+        step_id = None
+        phase = None
         try:
-            if scope not in _VALID_SCOPES:
-                raise ValueError(f"scope must be one of {sorted(_VALID_SCOPES)}.")
+            if scope != "run":
+                raise ValueError('scope must be "run": there are no steps or phases to signal.')
             ctx = _ensure_watchdog()
 
             if scope == "run":
@@ -2841,14 +2930,174 @@ if mcp is not None:
             return _error(command, exc, scope=scope)
 
     @mcp.tool()
+    def arm_wake(condition: dict[str, Any]) -> dict[str, Any]:
+        """Arm a wake condition over the cell's physical events.
+
+        condition is an object with any of: kinds (list of physical event
+        kinds from available_event_types), scene_ids (every listed id must
+        appear in the event), source (exact source name), min_confidence
+        (number), once (default true: removed after the first match), note
+        (free text, recorded). At least one of kinds, scene_ids or source is
+        required. When a physical event matches, wait_for_event returns
+        wake="wake_condition" with the condition and the event. Returns the
+        wake_id and the armed condition.
+        """
+        command = "arm_wake"
+        try:
+            ctx = _ensure_watchdog()
+            return _ok(command, **ctx.engine.arm_wake(condition))
+        except Exception as exc:
+            return _error(command, exc)
+
+    @mcp.tool()
+    def disarm_wake(wake_id: str) -> dict[str, Any]:
+        """Remove an armed wake condition. Returns whether it existed."""
+        command = "disarm_wake"
+        try:
+            ctx = _ensure_watchdog()
+            return _ok(command, wake_id=wake_id, removed=ctx.engine.disarm_wake(wake_id))
+        except Exception as exc:
+            return _error(command, exc)
+
+    @mcp.tool()
+    def wrist_pose_cue(object_id: str) -> dict[str, Any]:
+        """Return the wrist camera pipeline's latest pose estimate for one
+        object: camera1's output, which is the executor's pose source.
+
+        It is a cue, not evidence: it says where the executor's pipeline
+        thinks the object is, with that pipeline's confidence and stamp. A
+        verdict that rests on it must cite camera1_pose_cue in its
+        evidence_sources and is then flagged shared_source. Returns an error
+        when camera1 is disabled on this platform or has reported nothing.
+        """
+        command = "wrist_pose_cue"
+        try:
+            ctx = _ensure_watchdog()
+            if ctx.cue_poses is None:
+                raise RuntimeError("camera1 is disabled on this platform; no wrist pose estimates exist")
+            obs = ctx.cue_poses.latest(object_id)
+            if obs is None:
+                return _error(command, f"no camera1 pose estimate for {object_id!r} yet", object_id=object_id,
+                              known_ids=ctx.cue_poses.object_ids())
+            ctx.cue_used[object_id] = wall_ns()
+            return _ok(command, **obs.as_dict(), shared_source=True)
+        except Exception as exc:
+            return _error(command, exc, object_id=object_id)
+
+    @mcp.tool()
+    def issue_ruling(
+        halt_id: str,
+        ruling: str,
+        limits: dict[str, Any] | None = None,
+        reason: str = "",
+        part: str | None = None,
+        evidence_sources: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Record a ruling that answers one halt: allowed, allowed_with_limits,
+        denied_for_part, or escalate.
+
+        limits are physical quantities only, from the vocabulary
+        max_clamp_effort, max_tcp_speed_m_s, max_joint_speed_rad_s,
+        min_approach_clearance_m (positive numbers). This process enforces
+        them with its own monitors where a monitor exists (an effort limit
+        arms an effort_event monitor on the gripper effort joint, halting on
+        fire when the mode allows); limits it cannot enforce are recorded
+        as not enforceable. The ruling is written to the record as a ruling
+        event and, when watchdog.consult is on, published on the notices
+        topic for the planner. evidence_sources names what the ruling rests
+        on; citing a camera1 source marks it shared_source.
+        """
+        command = "issue_ruling"
+        try:
+            ctx = _ensure_watchdog()
+            if not isinstance(reason, str) or not reason.strip():
+                raise ValueError("reason must be a non-empty string")
+            halt = ctx.halt_client.get_halt(halt_id)
+            if halt is None:
+                raise ValueError(f"unknown halt_id {halt_id!r}; known: {[h['halt_id'] for h in ctx.halt_client.list_halts()]}")
+            clean_limits = _rulings.validate_ruling(ruling, limits, part)
+            sources = list(evidence_sources or [])
+            unknown = sorted(set(sources) - set(_EVIDENCE_SOURCES))
+            if unknown:
+                raise ValueError(f"unknown evidence_sources {unknown}; valid: {list(_EVIDENCE_SOURCES)}")
+            enforcement: list[dict[str, Any]] = []
+            if clean_limits:
+                clause = {"source": "ruling", "halt_id": halt_id, "ruling": ruling, "part": part}
+                enforcement = _rulings.enforce_limits(
+                    ctx.engine, ctx.recorder, clean_limits, _effort_joint(),
+                    halt_on_fire=(ctx.mode == "halt_enabled"), clause=clause,
+                )
+            published = False
+            if ctx.consult and ctx.notices is not None:
+                ctx.notices.publish_ruling(halt_id, ruling, part, clean_limits, reason.strip())
+                published = True
+            shared = _is_shared_source(sources)
+            payload = RulingPayload(
+                halt_id=halt_id, ruling=ruling, part=part, limits=clean_limits, reason=reason.strip(),
+                published_to_planner=published, enforcement=enforcement,
+                evidence_sources=sources, shared_source=shared,
+            )
+            event = make_event("ruling", payload)
+            ctx.event_bus.publish(event)
+            halt["ruling"] = payload.model_dump(mode="json")
+            with _RUN_LOCK:
+                _RUN.rulings.append(payload.model_dump(mode="json"))
+                if shared:
+                    _RUN.shared_source_count += 1
+            return _ok(command, event=event.model_dump(mode="json"), published_to_planner=published, enforcement=enforcement)
+        except Exception as exc:
+            return _error(command, exc, halt_id=halt_id, ruling=ruling)
+
+    @mcp.tool()
+    def inspect_acceptance() -> dict[str, Any]:
+        """Compare every acceptance part's latest observed pose (the WatchDog
+        pose channel, camera2) with its placement frame within the part's
+        tolerances, and record the result as an acceptance event.
+
+        Each part is pass, fail, or missing_evidence (no fresh observation of
+        the part or its frame, or no tolerances). A missing observation is
+        reported as missing evidence, never judged. Returns the per-part
+        table with errors, tolerances and the evidence used.
+        """
+        command = "inspect_acceptance"
+        try:
+            ctx = _ensure_watchdog()
+            result = _req.inspect_acceptance(ctx.recorder, _requirements(ctx), _parts(ctx))
+            payload = AcceptancePayload(
+                overall=result["overall"], parts=result["parts"], missing_evidence=result["missing_evidence"],
+                evidence_sources=result["evidence_sources"], shared_source=False,
+            )
+            event = make_event("acceptance", payload)
+            ctx.event_bus.publish(event)
+            with _RUN_LOCK:
+                _RUN.acceptance = payload.model_dump(mode="json")
+                if result["missing_evidence"]:
+                    _RUN.missing_evidence_count += 1
+            return _ok(command, **result, event=event.model_dump(mode="json"))
+        except Exception as exc:
+            return _error(command, exc)
+
+    @mcp.tool()
     def record_verdict(
-        step_id: str,
+        subject: str,
         verdict: str,
         clause_results: list[dict[str, Any]],
         explanation: str,
+        evidence_sources: list[str],
+        missing_evidence: list[str] | None = None,
         claimed_outcome: str | None = None,
     ) -> dict[str, Any]:
-        """Publish a conformance verdict with free-form clause result dicts.
+        """Publish a conformance finding on one subject (a part id, or
+        "workspace" for the working area) with free-form clause result dicts
+        and the evidence it rests on.
+
+        evidence_sources is required: names from camera2_pose, ground_truth,
+        joint_state, robot_tf, effort_proxy, contact_report, look:camera2,
+        look:camera1, camera1_pose_cue, monitor_fire, physical_event,
+        acceptance_inspection. A finding citing any camera1 source is
+        flagged shared_source. missing_evidence names what could not be
+        observed; a finding with missing evidence and no other basis should
+        be verdict inconclusive.
 
         clause_results entries are expected to contain field, comparison,
         threshold, observed, and pass keys, plus clause_id: every entry that
@@ -2897,52 +3146,70 @@ if mcp is not None:
                     "record_run_verdict, not on a per-step record_verdict."
                 )
             _validate_clause_results(clause_results)
+            if not isinstance(subject, str) or not subject.strip():
+                raise ValueError('subject must be a part id or "workspace".')
+            sources, missing = _validate_evidence(evidence_sources, missing_evidence)
+            shared = _is_shared_source(sources)
             ctx = _ensure_watchdog()
             payload = VerdictPayload(
-                step_id=step_id,
+                subject=subject,
                 verdict=verdict,
                 claimed_outcome=claimed_outcome,
                 clause_results=clause_results,
                 explanation=explanation,
+                evidence_sources=sources,
+                missing_evidence=missing,
+                shared_source=shared,
             )
             event = make_event("verdict", payload)
             ctx.event_bus.publish(event)
+            _note_evidence(shared, missing)
             if verdict not in _NON_FINDING_VERDICTS:
                 # Tracked here, at the moment of publication, so the final
                 # rollup's findings_during_run is built from what was actually
                 # recorded rather than from what the agent remembers at the end.
-                _note_finding(step_id)
+                _note_finding(subject)
             with _CONTEXT_LOCK:
-                is_duplicate = step_id in _RECORDED_VERDICT_STEP_IDS
-                _RECORDED_VERDICT_STEP_IDS.add(step_id)
+                is_duplicate = subject in _RECORDED_VERDICT_SUBJECTS
+                _RECORDED_VERDICT_SUBJECTS.add(subject)
             if is_duplicate:
                 ctx.node.get_logger().warning(
                     f"record_verdict: a second verdict was recorded for "
-                    f"step_id={step_id!r}. Legitimate for a step with two "
-                    f"separate findings, or for a retried step, but check."
+                    f"subject={subject!r}. Legitimate for two separate findings, but check."
                 )
             return _ok(
                 command,
                 event=event.model_dump(mode="json"),
-                duplicate_step_id=is_duplicate,
+                duplicate_subject=is_duplicate,
+                shared_source=shared,
             )
         except Exception as exc:
-            return _error(command, exc, step_id=step_id, verdict=verdict)
+            return _error(command, exc, subject=subject, verdict=verdict)
 
     @mcp.tool()
     def record_run_verdict(
         verdict: str,
         clause_results: list[dict[str, Any]],
         explanation: str,
-        steps_covered: list[str],
+        parts_covered: list[str],
+        evidence_sources: list[str],
+        missing_evidence: list[str] | None = None,
         claimed_outcome: str | None = None,
         executor_terminal_status: str | None = None,
     ) -> dict[str, Any]:
-        """Publish the run's single final verdict. ALWAYS call this, once.
+        """Publish the episode's single final verdict. ALWAYS call this, once.
+
+        Plan-blind: parts_covered names every part this verdict accounts
+        for (every clause_results entry carries its own `part`), and
+        evidence_sources names what the end-state assessment rests on (the
+        acceptance inspection is acceptance_inspection). missing_evidence
+        names what could not be observed. The server adds the episode's
+        shared-source and missing-evidence counts and the recorded
+        acceptance inspection to the event.
 
         Every run ends with exactly one call here, at termination, whether or
         not you recorded findings along the way. Findings and this rollup are
-        complementary: your step verdicts are the TIMELINE (what went wrong,
+        complementary: your findings are the TIMELINE (what went wrong,
         when), and this is the END-STATE assessment (did the run ultimately
         succeed). A run with three findings still gets exactly one of these.
 
@@ -2968,12 +3235,8 @@ if mcp is not None:
                          could exist.
 
         Judge it on YOUR OWN evidence: query each placement frame and compare
-        each part's final pose against it. The executor's run_ended status
-        tells you the run STOPPED, and it is recorded beside your verdict for
-        the independence comparison, but it must not be what decides
-        conformant versus non_conformant. An executor that claims "completed"
-        on a run that ended misseated is precisely the case this separation
-        exists to catch.
+        each part's final pose against it. Nothing the executor reports reaches this process; only the episode
+        runner's episode_end notice tells you the episode stopped.
 
         When you recorded findings, explanation must tie the timeline to the
         end-state -- name what was found and say what became of it. For
@@ -2988,13 +3251,13 @@ if mcp is not None:
         cannot override them.
 
         clause_results carries the same entries record_verdict takes, with one
-        addition: every entry must also name its own step_id. clause_id is
+        addition: every entry must also name its own part. clause_id is
         "<section>.<field>" and is identical across all four parts, so without
         it the rollup cannot say which part a result belongs to.
 
-        steps_covered lists every step_id this verdict accounts for. It is a
+        parts_covered lists every part this verdict accounts for. It is a
         real argument rather than a sentence in explanation so coverage can be
-        checked by set comparison against the task's steps: block, the same way
+        checked by set comparison against the requirements' acceptance parts, the same way
         clause_id makes clause coverage checkable.
 
         explanation must summarise the DECISION BASIS, the same as
@@ -3022,34 +3285,32 @@ if mcp is not None:
         ended wrong -- the finding itself is already on the record as its own
         step verdict and is reported here in findings_during_run either way.
 
-        executor_terminal_status is the status from the executor's run_ended
-        event -- "completed", "aborted", or None if none arrived and you
-        terminated on the no-event timeout. Record it verbatim. It is logged
-        BESIDE your verdict for the scorer to compare; it must never change
-        what your verdict is. An executor claiming "completed" on a run you
-        judge non_conformant is exactly the comparison this field exists for.
+        executor_terminal_status is filled by the server: "episode_end" when
+        the runner's notice was observed, "no_episode_end" otherwise. It is
+        never the executor's own status, which this process does not hear.
         """
         command = "record_run_verdict"
         try:
             if verdict not in _VALID_VERDICTS:
                 raise ValueError(f"verdict must be one of {sorted(_VALID_VERDICTS)}.")
-            if not steps_covered or not all(
-                isinstance(s, str) and s for s in steps_covered
+            if not parts_covered or not all(
+                isinstance(s, str) and s for s in parts_covered
             ):
                 raise ValueError(
-                    "steps_covered must be a non-empty list of step_id strings "
-                    "naming every step this run-scoped verdict accounts for."
+                    "parts_covered must be a non-empty list of part ids "
+                    "naming every part this run-scoped verdict accounts for."
                 )
             _validate_run_clause_results(clause_results)
             uncovered = sorted(
-                {e["step_id"] for e in clause_results} - set(steps_covered)
+                {e["part"] for e in clause_results} - set(parts_covered)
             )
             if uncovered:
                 raise ValueError(
-                    f"clause_results name step_ids absent from steps_covered: "
-                    f"{uncovered}. steps_covered must account for every step a "
-                    f"clause result was evaluated under."
+                    f"clause_results name parts absent from parts_covered: "
+                    f"{uncovered}. parts_covered must account for every part a "
+                    f"clause result was evaluated for."
                 )
+            sources, missing = _validate_evidence(evidence_sources, missing_evidence)
             ctx = _ensure_watchdog()
             # CODE-populated, not agent-supplied. The agent passed None on
             # both the clean and the aborted run, so the argument is only a
@@ -3080,14 +3341,17 @@ if mcp is not None:
                     f"{executor_terminal_status!r} but the observed run_ended said "
                     f"{observed_status!r}; recording the observed value."
                 )
+            _note_evidence(_is_shared_source(sources), missing)
             event = _publish_run_verdict(
                 ctx,
                 verdict=verdict,
                 clause_results=clause_results,
-                steps_covered=steps_covered,
+                parts_covered=parts_covered,
                 explanation=explanation,
                 claimed_outcome=claimed_outcome,
                 executor_terminal_status=resolved_status,
+                evidence_sources=sources,
+                missing_evidence=missing,
             )
             with _RUN_LOCK:
                 _RUN.finalized = True
@@ -3097,7 +3361,10 @@ if mcp is not None:
             return _ok(
                 command,
                 event=event.model_dump(mode="json"),
-                steps_covered=steps_covered,
+                parts_covered=parts_covered,
+                shared_source=bool(published.get("shared_source", False)),
+                shared_source_count=int(published.get("shared_source_count", 0)),
+                missing_evidence_count=int(published.get("missing_evidence_count", 0)),
                 executor_terminal_status=resolved_status,
                 # Echoed so the agent can see what the server concluded about
                 # its own timeline, and so the call log carries it without a

@@ -32,6 +32,8 @@ def default_cancel_targets() -> tuple[str, ...]:
 class HaltClient:
     """Cancel active goals on the configured action servers; never move."""
 
+    MODES = ("record_only", "halt_enabled")
+
     def __init__(
         self,
         node: Any,
@@ -39,11 +41,22 @@ class HaltClient:
         callback_group: Any,
         timeout_sec: float = 1.0,
         cancel_targets: Sequence[str] | None = None,
+        mode: str = "halt_enabled",
+        notices: Any = None,
     ) -> None:
+        if mode not in self.MODES:
+            raise ValueError(f"watchdog.mode must be one of {self.MODES}, got {mode!r}")
         self.node = node
         self.event_bus = event_bus
         self._callback_group = callback_group
         self.timeout_sec = timeout_sec
+        # record_only: every halt is recorded (and gets a halt_id) but no
+        # cancel is sent. halt_enabled: the cancel goes out.
+        self.mode = mode
+        # Optional NoticePublisher (rulings.py): a real halt is also announced
+        # on the notices topic so a consulting planner learns of it.
+        self.notices = notices
+        self.halts: dict[str, dict[str, Any]] = {}
         targets = [t.strip() for t in (cancel_targets or default_cancel_targets()) if t and t.strip()]
         if not targets:
             raise ValueError("HaltClient needs at least one cancel target")
@@ -65,33 +78,66 @@ class HaltClient:
         step_id is optional provenance for the published halt event. Nothing
         in the cancel itself reads it: the request cancels all active goals.
         """
+        import uuid
+
+        halt_id = f"halt_{uuid.uuid4().hex[:10]}"
+        suppressed = self.mode == "record_only"
         ok = False
         per_target: list[dict[str, Any]] = []
         goals_cancelled: int | None = None
         elapsed_sec: float | None = None
         started = time.monotonic()
         try:
-            self._ensure_clients()
-            for index, target in enumerate(self.cancel_targets):
-                outcome = self._cancel_one(target)
-                per_target.append(outcome)
-                if outcome["goals_cancelled"] is not None:
-                    goals_cancelled = (goals_cancelled or 0) + outcome["goals_cancelled"]
-                if index == 0:
-                    ok = bool(outcome["ok"])
+            if suppressed:
+                per_target.append({
+                    "target": self.primary_target, "ok": False,
+                    "detail": "halt suppressed: watchdog.mode is record_only", "goals_cancelled": None,
+                })
+            else:
+                self._ensure_clients()
+                for index, target in enumerate(self.cancel_targets):
+                    outcome = self._cancel_one(target)
+                    per_target.append(outcome)
+                    if outcome["goals_cancelled"] is not None:
+                        goals_cancelled = (goals_cancelled or 0) + outcome["goals_cancelled"]
+                    if index == 0:
+                        ok = bool(outcome["ok"])
         except Exception as exc:  # noqa: BLE001  a halt must always return and publish
             per_target.append({"target": "(setup)", "ok": False, "detail": str(exc), "goals_cancelled": None})
         finally:
             elapsed_sec = time.monotonic() - started
-            self._publish_halt(monitor_id, detail, step_id)
+            self._publish_halt(monitor_id, detail, step_id, halt_id, suppressed)
         cancel_detail = "; ".join(f"{o['target']}: {o['detail']}" for o in per_target) or "cancel not attempted"
-        return {
+        result = {
+            "halt_id": halt_id,
             "ok": bool(ok),
+            "suppressed": suppressed,
+            "mode": self.mode,
             "detail": cancel_detail,
             "goals_cancelled": goals_cancelled,
             "elapsed_sec": elapsed_sec,
             "targets": per_target,
+            "monitor_id": monitor_id,
+            "reason": detail,
+            "wall_ns": time.time_ns(),
+            "ruling": None,
         }
+        with self._lock:
+            self.halts[halt_id] = result
+        if not suppressed and self.notices is not None:
+            try:
+                self.notices.publish_halt(halt_id, detail)
+            except Exception:
+                pass
+        return result
+
+    def get_halt(self, halt_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            return self.halts.get(halt_id)
+
+    def list_halts(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(h) for h in self.halts.values()]
 
     def prewarm(self) -> None:
         """Construct ROS clients before a monitor callback needs them."""
@@ -152,12 +198,17 @@ class HaltClient:
             self._CancelGoal = CancelGoal
             self._GoalInfo = GoalInfo
 
-    def _publish_halt(self, monitor_id: str, detail: str, step_id: str | None) -> None:
+    def _publish_halt(
+        self, monitor_id: str, detail: str, step_id: str | None, halt_id: str = "", suppressed: bool = False
+    ) -> None:
         try:
             if self.event_bus is not None:
                 self.event_bus.publish(make_event(
                     "halt",
-                    HaltPayload(step_id=step_id, monitor_id=monitor_id, detail=detail),
+                    HaltPayload(
+                        step_id=step_id, monitor_id=monitor_id, detail=detail,
+                        halt_id=halt_id, suppressed=suppressed, mode=self.mode,
+                    ),
                 ))
         except Exception:
             pass

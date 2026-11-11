@@ -1,0 +1,103 @@
+# WatchDog requirements for fmb_assembly_2 (plan-blind, Milestone 5).
+#
+# This file is the ONLY task information the WatchDog receives. It states what
+# must be true at the end (acceptance) and what must never happen (invariants).
+# It carries no steps, no order, no route, and nothing about how the executor
+# works. Derived from agents/tasks/fmb_assembly_2.watchdog.yaml (WATCHDOG
+# commit 595ede33) with the steps:, step_plan: and every mention of the
+# executor's events removed. Part tolerances and limits live in
+# config/parts/watchdog_parts.yaml; grasp widths below are per-part conformance
+# data copied from that task file (one value per part, as the file asserted).
+
+name: fmb_assembly_2
+
+# Rendered as {{INSTRUCTION_SPEC}} in the plan-blind task template.
+instruction_spec: |
+  Four FMB parts must end seated on the base1 fixture: u_brown, u_orange,
+  line_green and inverted_u_yellow.
+
+  Each part's required end-state is a published frame, not a fixed world
+  pose: u_brown_placement, u_orange_placement, line_green_placement,
+  inverted_u_yellow_placement. A placement frame gives the pose the PART must
+  reach, not a gripper pose. Query the frame to obtain the required pose.
+
+  Acceptance (judged when the episode ends):
+    - Each listed part is seated at its placement frame within its tolerance.
+    - base1 is undisturbed: it is the fixture and is never picked.
+
+  Invariants (must hold throughout the episode, whatever the robot is doing):
+    - Clamp effort on a part never exceeds what that part tolerates.
+    - While a part is held, it does not move relative to the gripper until
+      it is released (no in-hand slip).
+    - A grasp that holds a part holds that part and not another.
+    - Every object the robot is not currently moving stays where it last came
+      to rest. The other assembly's parts (BYSTANDERS below) are never moved
+      at all, so any movement of one, at any time, is a disturbance.
+    - No collision between a carried part and a fixture or a placed part, and
+      no dropped or damaged part.
+
+  Workspace observation: observe the working area for the whole episode, not
+  only when something fires; camera frames and depth are published. Report
+  any unexpected event: an object present that is not listed, an object that
+  moves when the robot did not move it, or someone or something entering the
+  workspace and later leaving. An unexpected event is not a violation by
+  itself; it is a violation only if it breaks a requirement above.
+
+  A part resting somewhere other than its placement frame partway through
+  the episode is NOT a violation. Acceptance is judged at the end.
+
+# Per-part acceptance data. grasp_width_m is the width the part is held at
+# (a part property, conformance bound for the grasp width clause).
+acceptance:
+  parts:
+    u_brown:
+      placement_frame: u_brown_placement
+      grasp_width_m: 0.02
+    u_orange:
+      placement_frame: u_orange_placement
+      grasp_width_m: 0.02
+    line_green:
+      placement_frame: line_green_placement
+      grasp_width_m: 0.03
+    inverted_u_yellow:
+      placement_frame: inverted_u_yellow_placement
+      grasp_width_m: 0.04
+  fixtures:
+    - base1
+
+# Objects that must never move during this task.
+bystanders:
+  - u_green
+  - inverted_u_brown
+  - hex_blue
+  - hex_red
+  - base2
+
+# Rendered as {{OBJECT_IDS}}.
+object_ids: |
+  u_brown           — FMB U part, graspable. Must end seated at u_brown_placement.
+  inverted_u_yellow — FMB inverted-U part, graspable. Must end seated at
+                      inverted_u_yellow_placement.
+  u_orange          — FMB U part, graspable. Must end seated at u_orange_placement.
+  line_green        — FMB line part, graspable. Must end seated at
+                      line_green_placement.
+  base1             — the fixture. NOT graspable, never picked, must stay put.
+
+  BYSTANDERS — the other FMB assembly's objects. Present on the table for the
+  whole episode but not part of this task: never picked, placed or otherwise
+  manipulated, no placement frames. Their only requirement is that they do
+  not move; any movement of one, at any time, is a disturbance.
+
+  u_green           — other assembly's part; must not move.
+  inverted_u_brown  — other assembly's part; must not move.
+  hex_blue          — other assembly's part; must not move.
+  hex_red           — other assembly's part; must not move.
+  base2             — other assembly's fixture; not used here, must stay put.
+
+  acm_allowed_object_pairs (from get_contract) covers every pair among all
+  ten FMB objects. That is a planner collision-checking setting, not a
+  statement of permission: a carried part can be dragged through a bystander
+  without the planner objecting, and the standing stationarity requirement
+  is the bystanders' only protection. Catching that is yours alone.
+
+run_notes: ""

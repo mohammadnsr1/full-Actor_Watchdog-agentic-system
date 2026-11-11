@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from robot_backend.events.schema import EventEnvelope
+from robot_backend.events.schema import _EXECUTOR_EVENT_TYPES, EventEnvelope
 from robot_backend.registry import executor_registry_override, load_registry
 
 from .timebase import wall_ns
@@ -339,7 +339,17 @@ class EvidenceRecorder:
         # side of the object/frame distinction it's on.
         self.tf_staleness_counters: dict[str, int] = {oid: 0 for oid in self.object_frames}
         self.tf_staleness_counters.update({fid: 0 for fid in self.cell_frames})
-        self.current_step_id: str | None = None
+        # Plan-blind (Milestone 5): no step tracking. The recorder's wake
+        # sources are physical events, the episode-end notice, monitor fires
+        # and wake conditions. Object poses come from the WatchDog pose
+        # channel (camera2 topic), never from object TF.
+        self.pose_source: Any | None = None
+        self._pose_source_name: str = "unattached"
+        self.episode_ended: bool = False
+        self.episode_end_record: dict[str, Any] | None = None
+        self.last_physical_event: dict[str, Any] | None = None
+        self.motion_active: bool | None = None
+        self.physical_counts: dict[str, int] = {}
         self.tf_buffer: Any | None = None
         self.tf_listener: Any | None = None
         self._subs: list[Any] = []
@@ -369,6 +379,34 @@ class EvidenceRecorder:
             node.create_subscription(
                 String, _platform_topic("watchdog_events"), self._on_event_msg, 100
             )
+        )
+        # Physical events and the episode-end notice: the only wake sources
+        # besides monitor fires. Executor-origin envelopes on the events topic
+        # are dropped at ingest (see _on_event_msg).
+        from cell_planner_msgs.msg import PhysicalEvent, WatchdogNotice
+
+        from robot_backend.cell_config import platform as _platform
+
+        self._subs.append(
+            node.create_subscription(
+                PhysicalEvent, _platform_topic("physical_events"), self._on_physical_msg, 100
+            )
+        )
+        self._subs.append(
+            node.create_subscription(
+                WatchdogNotice, _platform_topic("watchdog_notices"), self._on_notice_msg, 20
+            )
+        )
+        # WatchDog's pose channel: camera2's pose topic. On sim in
+        # ground_truth mode the cell publishes simulator truth there; the
+        # name of the pipeline is recorded on every sample and verdict.
+        from cell_platform_interfaces.topic_poses import TopicPoseSource
+
+        p = _platform()
+        source_label = str(p.get("poses", "source"))
+        self._pose_source_name = "ground_truth" if source_label == "ground_truth" else "camera2_pose"
+        self.pose_source = TopicPoseSource(
+            node, p.get("poses", "watchdog_topic"), camera="camera2", source=self._pose_source_name
         )
         self._timer = node.create_timer(1.0 / TF_SAMPLE_HZ, self._on_tf_timer)
 
@@ -435,10 +473,11 @@ class EvidenceRecorder:
             # mutually consistent now.
             tick_wall_ns = wall_ns()
 
+            # Plan-blind: only CELL frames (the TCP) are TF chains. Object
+            # poses are sampled from the WatchDog pose channel below, with the
+            # same tick stamp, so a relative_frame clause still pairs a TCP
+            # sample with an object sample by identical wall_ns.
             chains: list[tuple[str, dict[str, str], bool]] = [
-                (object_id, self.object_frames[object_id], True)
-                for object_id in list(self.object_frames)
-            ] + [
                 (frame_id, self.cell_frames[frame_id], False)
                 for frame_id in list(self.cell_frames)
             ]
@@ -465,13 +504,23 @@ class EvidenceRecorder:
             # must not drag every other sample into the past with it; it is
             # sampled at its own latest (it is already inaccurate, and
             # tf_staleness_counters is the channel that reports it).
+            # Object observations from the WatchDog pose channel, fetched
+            # here so their header stamps take part in the common-time
+            # choice: a TCP sample from TF and an object sample from the
+            # topic must still be mutually consistent, or a relative quantity
+            # shows the same motion-induced phantom drift the common time
+            # exists to remove.
+            latest_obs: dict[str, Any] = (
+                self.pose_source.latest_all(max_age_s=1.0) if self.pose_source is not None else {}
+            )
+            obs_stamps = [int(o.header_stamp_ns) for o in latest_obs.values() if int(o.header_stamp_ns) > 0]
+
             common_ns: int | None = None
-            if latest:
-                newest = max(stamp for _, _, _, stamp, _ in latest)
+            all_stamps = [stamp for _, _, _, stamp, _ in latest] + obs_stamps
+            if all_stamps:
+                newest = max(all_stamps)
                 lag_limit = int(TF_COMMON_TIME_MAX_LAG_SEC * 1e9)
-                eligible = [
-                    stamp for _, _, _, stamp, _ in latest if newest - stamp <= lag_limit
-                ]
+                eligible = [stamp for stamp in all_stamps if newest - stamp <= lag_limit]
                 if eligible:
                     common_ns = min(eligible)
 
@@ -501,15 +550,107 @@ class EvidenceRecorder:
                         ident, collections.deque(maxlen=self.max_tf_samples)
                     ).append(pose)
 
+            # Object poses from the WatchDog pose channel (camera2 topic). A
+            # registry object with no observation this tick bumps its
+            # staleness counter exactly as a failed TF lookup used to; on
+            # hardware that is "camera2 cannot see it" and is reported as
+            # missing evidence, never guessed.
+            if self.pose_source is not None:
+                for object_id in list(self.object_frames):
+                    obs = latest_obs.get(object_id)
+                    if obs is None:
+                        with self.lock:
+                            self.tf_staleness_counters[object_id] = (
+                                self.tf_staleness_counters.get(object_id, 0) + 1
+                            )
+                        continue
+                    pose = (
+                        tick_wall_ns, object_id,
+                        float(obs.position[0]), float(obs.position[1]), float(obs.position[2]),
+                        float(obs.orientation_xyzw[0]), float(obs.orientation_xyzw[1]),
+                        float(obs.orientation_xyzw[2]), float(obs.orientation_xyzw[3]),
+                        int(obs.header_stamp_ns),
+                    )
+                    with self.lock:
+                        self.object_pose_samples.setdefault(
+                            object_id, collections.deque(maxlen=self.max_tf_samples)
+                        ).append(pose)
+
             if self.engine is not None:
                 self.engine.on_tf_tick(self)
         except Exception as exc:
             self._log_warn(f"WatchDog TF timer failed: {exc}")
 
+    # -- physical events and notices (Milestone 5) ------------------------
+
+    def _on_physical_msg(self, msg: Any) -> None:
+        try:
+            from robot_backend.watchdog.physical import physical_record
+
+            record = physical_record(msg, wall_ns())
+            kind = record["event_type"]
+            with self.lock:
+                self.events.append(record)
+                self._wait_events.append(record)
+                self.last_physical_event = record
+                self.physical_counts[kind] = self.physical_counts.get(kind, 0) + 1
+                if kind == "motion_started":
+                    self.motion_active = True
+                elif kind == "motion_stopped":
+                    self.motion_active = False
+            if self.engine is not None:
+                payload = record["payload"]
+                try:
+                    self.engine.on_physical_event(
+                        kind, list(payload["scene_ids"]), str(payload["source"]), float(payload["confidence"])
+                    )
+                except Exception as exc:
+                    self._log_warn(f"WatchDog engine physical hook failed: {exc}")
+            self.wake_event.set()
+        except Exception as exc:
+            self._log_warn(f"WatchDog physical-event callback failed: {exc}")
+
+    def _on_notice_msg(self, msg: Any) -> None:
+        try:
+            from robot_backend.watchdog.physical import notice_record
+
+            record = notice_record(msg, wall_ns())
+            if record is None:
+                return
+            with self.lock:
+                self.events.append(record)
+                self._wait_events.append(record)
+                self.episode_ended = True
+                self.episode_end_record = record
+            self.wake_event.set()
+        except Exception as exc:
+            self._log_warn(f"WatchDog notice callback failed: {exc}")
+
+    def pose_source_name(self) -> str:
+        return self._pose_source_name
+
+    def physical_state(self) -> dict[str, Any]:
+        with self.lock:
+            last = dict(self.last_physical_event) if self.last_physical_event else None
+            return {
+                "motion_active": self.motion_active,
+                "last_physical_event": last["envelope"] if last else None,
+                "physical_event_counts": dict(self.physical_counts),
+                "episode_ended": self.episode_ended,
+                "pose_source": self._pose_source_name,
+            }
+
     def _on_event_msg(self, msg: Any) -> None:
         try:
             received = wall_ns()
             envelope = EventEnvelope.model_validate_json(msg.data)
+            # Plan-blind gate (Milestone 5): nothing the executor publishes
+            # reaches this process, whatever shows up on the events topic.
+            if envelope.event_type in _EXECUTOR_EVENT_TYPES:
+                return
+            payload_role = envelope.payload.get("role") if isinstance(envelope.payload, dict) else None
+            if envelope.event_type in ("look", "observation") and payload_role != "watchdog":
+                return
             envelope_dict = envelope.model_dump(mode="json")
             envelope_wall_ns = _parse_wall_time_iso(envelope.wall_time_iso)
             # wall_ns is the resolved, agent-facing timestamp: the publishing
@@ -532,38 +673,14 @@ class EvidenceRecorder:
                 "payload": envelope.payload,
                 "envelope": envelope_dict,
             }
-            step_id = (
-                envelope.payload.get("step_id")
-                if isinstance(envelope.payload, dict)
-                else None
-            )
             is_self_emitted = _is_self_emitted(envelope)
             with self.lock:
                 self.events.append(record)
                 if not is_self_emitted:
                     self._wait_events.append(record)
-                if envelope.event_type == "begin_step" and isinstance(step_id, str):
-                    self.current_step_id = step_id
-                elif envelope.event_type == "end_step":
-                    self.current_step_id = None
-            # Mechanical reactions to the executor's own skill events: the
-            # engine brackets the held span from grasp/release and takes down
-            # a released part's slip monitor before the opening jaws can read
-            # as a slip. Kept outside the lock above, and never allowed to
-            # break event recording.
-            if not is_self_emitted and self.engine is not None:
-                payload = envelope.payload if isinstance(envelope.payload, dict) else {}
-                skill_name = payload.get("skill_name")
-                if isinstance(skill_name, str):
-                    try:
-                        self.engine.on_skill_event(
-                            envelope.event_type,
-                            skill_name,
-                            payload.get("params"),
-                            payload.get("ok"),
-                        )
-                    except Exception as exc:
-                        self._log_warn(f"WatchDog engine skill hook failed: {exc}")
+            # The held span and the release auto-disarm are driven by
+            # physical events (part_lifted / part_released), see
+            # _on_physical_msg; nothing here reacts to executor skill events.
 
             if not is_self_emitted:
                 self.wake_event.set()
@@ -592,7 +709,44 @@ class EvidenceRecorder:
             int(tf_stamp_ns) if tf_stamp_ns is not None else None,
         )
 
+    def _object_id_for_tf_frame(self, tf_frame: str) -> str | None:
+        for object_id, frame in self.object_frames.items():
+            if frame.get("tf_frame") == tf_frame:
+                return object_id
+        return None
+
+    def _observation_as_transform(self, parent_frame: str, child_frame: str) -> Any | None:
+        """A TransformStamped built from the WatchDog pose channel for an
+        object frame, or None when the frame is not an object's or the
+        channel has no observation. Object frames never come from TF."""
+        object_id = self._object_id_for_tf_frame(child_frame)
+        if object_id is None or self.pose_source is None:
+            return None
+        obs = self.pose_source.latest(object_id)
+        if obs is None:
+            raise LookupError(
+                f"no observation of {object_id!r} on the WatchDog pose channel ({self._pose_source_name})"
+            )
+        if obs.frame_id and parent_frame and obs.frame_id != parent_frame:
+            raise LookupError(
+                f"observation of {object_id!r} is in frame {obs.frame_id!r}, not {parent_frame!r}"
+            )
+        from geometry_msgs.msg import TransformStamped
+
+        tf = TransformStamped()
+        tf.header.frame_id = parent_frame
+        tf.header.stamp.sec = int(obs.header_stamp_ns // 1_000_000_000)
+        tf.header.stamp.nanosec = int(obs.header_stamp_ns % 1_000_000_000)
+        tf.child_frame_id = child_frame
+        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = obs.position
+        (tf.transform.rotation.x, tf.transform.rotation.y,
+         tf.transform.rotation.z, tf.transform.rotation.w) = obs.orientation_xyzw
+        return tf
+
     def lookup_transform(self, parent_frame: str, child_frame: str) -> Any:
+        observed = self._observation_as_transform(parent_frame, child_frame)
+        if observed is not None:
+            return observed
         if self.tf_buffer is None:
             raise RuntimeError("TF buffer is not attached.")
         try:
@@ -605,6 +759,9 @@ class EvidenceRecorder:
         self, parent_frame: str, child_frame: str, stamp_ns: int
     ) -> Any:
         """Transform at one specific TF time, for the common-time tick sampling."""
+        observed = self._observation_as_transform(parent_frame, child_frame)
+        if observed is not None:
+            return observed
         if self.tf_buffer is None:
             raise RuntimeError("TF buffer is not attached.")
         import rclpy
@@ -799,9 +956,9 @@ class EvidenceRecorder:
                 },
             }
 
-    def current_step(self) -> str | None:
-        with self.lock:
-            return self.current_step_id
+    def current_step(self) -> None:
+        """Plan-blind: there is no step. Kept so old callers get None, not AttributeError."""
+        return None
 
     def tf_counters(self) -> dict[str, int]:
         with self.lock:

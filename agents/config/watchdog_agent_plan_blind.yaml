@@ -1,0 +1,30 @@
+agent: watchdog
+provider: openai
+model: gpt-5
+api_key_env: OPENAI_API_KEY
+max_tokens: 8192
+context_budget_tokens: 150000
+context_keep_recent_turns: 5
+
+reasoning_effort: medium
+thinking_budget_tokens: 4096
+
+# Plan-blind WatchDog (Milestone 5): the system prompt derived from the S3
+# prompt with every reference to the executor's events, steps and phases
+# removed; the task template renders the requirements file only.
+system_prompt: prompts/watchdog_system_plan_blind.txt
+task_template: prompts/watchdog_task_plan_blind.txt
+
+mcp_servers:
+  - name: watchdog
+    command: /usr/bin/python3
+    args: ["-m", "robot_backend.mcp_servers.watchdog_mcp_server"]
+    cwd: "~/full-Actor_Watchdog-agentic-system/ros2_ws"
+
+loop:
+  max_turns: 400
+  stop_after_consecutive_timeouts: null
+
+transcript_dir: transcripts
+
+mcp_client_timeout_sec: 180.0

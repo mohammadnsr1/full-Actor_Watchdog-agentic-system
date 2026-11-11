@@ -109,6 +109,39 @@ watchdog:
       - /move_action/_action/cancel_goal
     timeout_s: 1.0
 
+# Physical-event detection (cell_physical_events, Milestone 5). Every
+# threshold is TODO(mohammad): a detector whose threshold is 0 is disabled and
+# says so once at start; nothing is estimated. Units in the key names.
+# Files: config/parts/watchdog_parts.yaml supplies the part and feature ids.
+physical_events:
+  publish_rate_hz: 20.0
+  # motion_started / motion_stopped: arm joint-speed norm (rad/s) with a
+  # debounce window; source joint_state.
+  motion_speed_threshold_rad_s: 0.0
+  motion_debounce_s: 0.0
+  # effort_rising: slope of the gripper effort joint over a window; source joint_state.
+  effort_rise_rate_per_s: 0.0
+  effort_rise_window_s: 0.0
+  # contact_made / contact_lost by effort proxy (used only while the platform
+  # has no pad contact report); source effort_proxy with the confidence below.
+  effort_contact_threshold: 0.0
+  effort_contact_ticks: 0
+  effort_proxy_confidence: 0.0
+  # part_lifted: rise above the part's rest height; held = within hold_distance_m
+  # of the TCP; part_released: beyond release_distance_m; part_settled: speed
+  # under settle_speed_m_s for settle_window_s. Sources camera2_pose + robot_tf.
+  lift_threshold_m: 0.0
+  hold_distance_m: 0.0
+  release_distance_m: 0.0
+  settle_speed_m_s: 0.0
+  settle_window_s: 0.0
+  # part_approaching_feature / part_engaged_feature: distance between the held
+  # part and each of its feature frames (watchdog_parts.yaml features).
+  approach_distance_m: 0.0
+  engage_distance_m: 0.0
+  # workspace_object_appeared: a camera2 detection id that is not a known part.
+  unknown_object_min_confidence: 0.0
+
 # Milestone 6+. Left as a shape so later code has one place to read.
 budgets:
   # TODO(mohammad): simulated-seconds budget per episode and the wall guard.

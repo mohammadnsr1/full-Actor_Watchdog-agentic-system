@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cell_physical_events</name>
+  <version>0.1.0</version>
+  <description>Cell-owned physical event vocabulary on /cell/physical_events: contact, lift, release, settle, approach, engage, effort rise, motion start/stop, unknown object. Computed from the platform's declared signals (joint states, robot TF, the WatchDog camera pose topic, pad contacts when available); every threshold is config, every event carries source and confidence, and a missing signal produces no events. Python 3.10 / Humble and Jazzy.</description>
+  <maintainer email="mnasr3@asu.edu">Mohammad Nasr</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>cell_platform_interfaces</exec_depend>
+  <exec_depend>cell_planner_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

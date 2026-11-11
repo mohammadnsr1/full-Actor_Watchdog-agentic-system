@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import math
 import threading
+import uuid
 from typing import Any
 
 from robot_backend.events.schema import (
@@ -127,6 +128,10 @@ class MonitorEngine:
         # skill_start or a failed grasp.
         self._held_object_id: str | None = None
         self._held_confirmed: bool = False
+        # Wake conditions (arm_wake): matched against physical events; a
+        # match is queued like a fire and delivered by wait_for_event.
+        self._wake_conditions: dict[str, Any] = {}
+        self._wake_queue: collections.deque[dict[str, Any]] = collections.deque(maxlen=1000)
         # --- authored lane ------------------------------------------------
         # Authored monitors run on their own daemon thread, never on the
         # recorder callbacks that evaluate the library feeds. The recorder
@@ -368,52 +373,71 @@ class MonitorEngine:
             self._emit_disarmed(monitor, reason)
         return [monitor.monitor_id for monitor in monitors]
 
-    def on_skill_event(
-        self,
-        event_type: str,
-        skill_name: str | None,
-        params: dict[str, Any] | None,
-        ok: Any = None,
+    def on_physical_event(
+        self, kind: str, scene_ids: list[str], source: str, confidence: float
     ) -> None:
-        """React to an executor skill event observed on the shared event bus.
+        """React to a physical event from the cell (plan-blind, Milestone 5).
 
-        Two mechanical consequences, both keyed on the event alone -- no
-        cross-process call and nothing the agent has to be told to do:
+        Two mechanical consequences, keyed on the physics alone -- nothing
+        from the executor:
 
-          * grasp/release bracket the held span, so effort fires (which are
-            joint-scoped) can be attributed to the part in the gripper.
+          * part_lifted / part_released bracket the held span, so effort
+            fires (which are joint-scoped) can be attributed to the part in
+            the gripper.
           * a release ends the held span by definition, so the slip monitor
-            watching that span comes down with it, before the opening jaws can
-            register as a slip. release_skill emits skill_start before
-            backend.gripper.open(), which is the margin this relies on.
+            watching that span comes down with it (the release auto-disarm
+            behaviour is unchanged, only its trigger moved from the
+            executor's release_skill event to the observed release).
 
-        A reorient set-down is a release like any other and needs no special
-        case; the re-pick arms a fresh slip monitor as usual.
+        Every event is also matched against the armed wake conditions.
         """
-        if event_type == "skill_start" and skill_name == "grasp_skill":
-            object_id = (params or {}).get("object_id")
-            if isinstance(object_id, str):
-                self._held_object_id = object_id
-                self._held_confirmed = False
-            return
-
-        if event_type == "skill_end" and skill_name == "grasp_skill":
-            if ok is True:
-                self._held_confirmed = True
-            else:
-                # The grasp did not take: nothing is held.
+        if kind == "part_lifted" and scene_ids:
+            self._held_object_id = scene_ids[0]
+            self._held_confirmed = True
+        elif kind == "part_released" and scene_ids:
+            object_id = scene_ids[0]
+            self._release_disarm_slip_monitors(object_id)
+            if self._held_object_id == object_id:
                 self._held_object_id = None
                 self._held_confirmed = False
-            return
+        with self.lock:
+            conditions = list(self._wake_conditions.values())
+        for cond in conditions:
+            if cond.matches(kind, scene_ids, source, confidence):
+                cond.matches_count += 1
+                with self.lock:
+                    if cond.once:
+                        self._wake_conditions.pop(cond.wake_id, None)
+                    self._wake_queue.append({
+                        "wake_id": cond.wake_id,
+                        "condition": cond.as_dict(),
+                        "event": {"kind": kind, "scene_ids": list(scene_ids), "source": source, "confidence": confidence},
+                        "wall_ns": wall_ns(),
+                    })
+                self.wake_event.set()
 
-        if event_type == "skill_start" and skill_name == "release_skill":
-            object_id = (params or {}).get("object_id")
-            if isinstance(object_id, str):
-                self._release_disarm_slip_monitors(object_id)
-                if self._held_object_id == object_id:
-                    self._held_object_id = None
-                    self._held_confirmed = False
-            return
+    def arm_wake(self, condition: dict[str, Any]) -> dict[str, Any]:
+        from robot_backend.watchdog.physical import WakeCondition
+
+        wake_id = f"wake_{uuid.uuid4().hex[:10]}"
+        cond = WakeCondition(wake_id, condition, wall_ns())
+        with self.lock:
+            self._wake_conditions[wake_id] = cond
+        return cond.as_dict()
+
+    def disarm_wake(self, wake_id: str) -> bool:
+        with self.lock:
+            return self._wake_conditions.pop(wake_id, None) is not None
+
+    def pop_wakes(self) -> list[dict[str, Any]]:
+        with self.lock:
+            wakes = list(self._wake_queue)
+            self._wake_queue.clear()
+        return wakes
+
+    def wake_snapshot(self) -> list[dict[str, Any]]:
+        with self.lock:
+            return [c.as_dict() for c in self._wake_conditions.values()]
 
     def held_object_id(self) -> str | None:
         """Return the part currently in the gripper, or None."""
