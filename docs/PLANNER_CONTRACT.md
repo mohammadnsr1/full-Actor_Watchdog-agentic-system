@@ -1,0 +1,113 @@
+# Planner contract
+
+Written 2026-11-17 (Milestone 7). What a planner is, what the episode runner
+gives it, what it may and may not touch, and what it must report. The idea of
+a one-tool planner called once per episode is credited to DROIDSTACK in
+`docs/PROVENANCE.md`; nothing here is copied from it.
+
+## 1. What a planner is
+
+A planner is a directory with an executable `run.sh` that starts a **stdio MCP
+server** exposing exactly **one tool**:
+
+```
+execute_task(task_ref: str) -> {"state": "done" | "stopped", "reason": str}
+```
+
+- The episode runner is the MCP client. It starts `run.sh`, calls
+  `execute_task` **once**, and stops the process when the episode ends.
+- `task_ref` is the path of the executor task file
+  (`config/tasks/<assembly>.yaml`, absolute or relative to the repo root).
+- `done` means the planner believes the task is complete. `stopped` means it
+  gave up (a halt it did not resume from, a failed step, an impossible
+  geometry). `reason` is free text. Neither is trusted: the runner's checker
+  and the WatchDog decide what happened.
+- Anything the planner writes to **stdout** that is not MCP protocol breaks the
+  session. Log to stderr or to `$CELL_EPISODE_DIR/executor/`.
+
+`executor/planner_template/` is a working planner that executes the task
+file's steps as written. An authoring agent starts from a copy of it.
+
+## 2. What the runner provides
+
+Environment of the planner process:
+
+| Variable | Meaning |
+|---|---|
+| `CELL_PLATFORM` | `sim` or `hardware`; pass to `load_platform_config` |
+| `CELL_REPO_ROOT` | the repo root |
+| `CELL_EPISODE_ID` | the episode id |
+| `CELL_EPISODE_DIR` | `records/<episode_id>/`; the planner owns `executor/` under it and nothing else |
+| `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` | inherited from the runner |
+
+Before `execute_task` is called the scene is reset and verified (sim:
+`load_layout` + `verify_reset`; hardware: operator reset + verify), the
+recording is running, and the WatchDog session (if any) is up.
+
+## 3. What the planner may use
+
+Every name comes from `config/platforms/<platform>.yaml` through
+`cell_platform_interfaces.platform_config`; a planner never writes a topic,
+service, frame or joint name literal.
+
+| Channel | How |
+|---|---|
+| Motion, gripper | `cell_backend_<platform>.build_backends(node, platform)`: `backends.motion.execute(trajectory)`, `backends.gripper.open() / close(force) / set_width(w, force) / read()` |
+| Executor poses (camera1) | `backends.executor_poses.latest(object_id)`: parts and placement frames, `vision_msgs/Detection3DArray` on `poses.executor_topic` |
+| Planning | the planning service under `services.planning_namespace`: `plan_to_pose`, `plan_to_joints`, `plan_cartesian`, `check_trajectory`, collision objects |
+| The gate | `services.request_go` (`cell_sync_interfaces/RequestGo`): call it once before the first motion so WatchDog can arm; it never refuses, it may wait |
+| Executor data | `config/tasks/<assembly>.yaml` (the task), `config/parts/executor_parts.yaml` (geometry, grasp force) |
+| WatchDog notices | `topics.watchdog_notices` (`WatchdogNotice`), only when `config/cell.yaml watchdog.consult` is true: `halt` and the `ruling` that answers it |
+| Physical events | `topics.physical_events` (read only) |
+
+## 4. What the planner must not touch
+
+- The scene: the cell command server (teleport, layout, timeline, save), the
+  stage, `scene` in the backends container. Only the runner resets the scene.
+- Anything WatchDog-side: `config/requirements/`, `config/parts/watchdog_parts.yaml`,
+  `topics.watchdog_events`, the WatchDog session directory, the recorder.
+- Publishing on `topics.watchdog_notices` or `topics.physical_events`.
+- Files outside `$CELL_EPISODE_DIR/executor/` (and its own directory).
+
+## 5. What the planner must report: the fact journal
+
+The planner publishes `cell_planner_msgs/ExecutorFact` on
+`topics.executor_facts` as it works. The journal is **untrusted** by
+construction: it is recorded in the episode bag for scoring and never relayed
+to WatchDog.
+
+| `kind` | When | Fields |
+|---|---|---|
+| `intent` | before an action on a part | `verb` (grasp, carry, insert, release, ...), `part`, `feature` |
+| `arm_goal` | a trajectory is sent | `detail`: goal id and label |
+| `grip_close` / `grip_open` | gripper commanded | `part`, `detail`: result |
+| `hold` / `carry` / `release` | the planner's belief about the part in hand | `part`, `feature` |
+| `claim_done` | just before returning `done` | `detail`: the claim |
+
+## 6. Halts and rulings
+
+WatchDog halts by cancelling the active trajectory goal (`motion.cancel_service`).
+The planner sees `motion.execute(...).state == "canceled"`.
+
+- `watchdog.consult: false`: the planner returns `stopped` with the halt in
+  `reason`. Resuming without a ruling is not allowed.
+- `watchdog.consult: true`: the planner waits for the `ruling` notice with the
+  same `halt_id`. `allowed` / `allowed_with_limits`: it may retry the step,
+  honouring the limits (they are physical quantities, never motions);
+  `denied_for_part`: it must not touch that part again; `escalate` or no
+  ruling in time: it returns `stopped`.
+
+## 7. Budget
+
+`config/cell.yaml budgets.episode_sim_s` (simulated seconds, measured on
+`/clock` on sim) and `budgets.episode_wall_guard_s` (wall seconds) bound one
+`execute_task` call. When either runs out the runner cancels the active
+motion, ends the call and stops the planner process; the episode verdict
+records `budget_exhausted` or `wall_guard`. A planner should finish well
+inside the budget; it is not told how much is left.
+
+## 8. Python
+
+Python 3.10 compatible (the hardware container runs Humble). The template runs
+with `ros2_ws/.venv/bin/python` (it has `mcp`) and appends the system
+dist-packages for `rclpy`, as the robot_backend MCP servers do.

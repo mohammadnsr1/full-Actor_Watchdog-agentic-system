@@ -356,7 +356,7 @@ def run_step(step: dict[str, Any], cell: Cell | None, call: Any, platform: Any, 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--instruction", default=str(REPO / "agents" / "tasks" / "fmb_assembly_2.executor.yaml"))
+    ap.add_argument("--instruction", default=str(REPO / "config" / "tasks" / "fmb_assembly_2.yaml"))
     ap.add_argument("--step", action="append", help="step_id to run (repeatable); default every pick_* step")
     ap.add_argument("--assembly", default="fmb_assembly_2")
     ap.add_argument("--layout", default="nominal")

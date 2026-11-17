@@ -1,5 +1,9 @@
 # EXECUTOR instruction for fmb_assembly_2.
 #
+# Executor-only: read by the planner (execute_task task_ref) and the authoring
+# tools, never by the WatchDog side. It lives under config/tasks/, not agents/,
+# so no WatchDog path can reach it (docs/INDEPENDENCE.md, docs/PLANNER_CONTRACT.md).
+# Moved here from agents/tasks/fmb_assembly_2.executor.yaml on 2026-11-17.
 
 name: fmb_assembly_2
 instruction_spec: |
