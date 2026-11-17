@@ -5,7 +5,28 @@ Updated 2026-11-11 at the end of Milestone 6 (v2): cell command server, headless
 ## State
 
 - M1 to M4: done and checked. M5: built; the plan-blind session ran on your side once the config bug was fixed; the physical-event thresholds are yours to set (you said later).
-- M6 (this milestone): written and offline-tested. **The Kit-side code has not run inside Isaac yet** (I cannot run Isaac from here); its first run is your check below. Not committed.
+- M6 (this milestone): committed in 80f2967; live checks on 2026-11-17 below. The 2026-11-17 fixes are **not committed**.
+
+## Live check status (2026-11-17)
+
+| Step | Status |
+|---|---|
+| 1 command server (GUI) | PASS. Use `nc -N` (Ubuntu's nc quits before the reply otherwise). |
+| 2 capture nominal layout | PASS. `verify_tolerances` 5 mm / 2 deg. |
+| 3 reset + verify | PASS (all 13 prims within 0.05 mm; arm home, gripper open). |
+| 4 contacts | PASS via `tools/pick_check.py`: all four pick steps of `agents/tasks/fmb_assembly_2.executor.yaml` grasp, lift 200-300 mm, slip < 1 mm, found/lost on both pads, nothing else touched. Empty close shows nothing because `enabledSelfCollisions` is off. |
+| 5 headless | PASS with `isaac/headless/run_headless.sh` (wrapper sources `~/isaacsim/setup_ros_env.sh`); `/clock` and `/joint_states` ~38 Hz; `pick_line_green` passed on headless. |
+| 6 recording | not run |
+| 7 camera1 | not run (needs pose and size) |
+
+Fixed on 2026-11-17 (uncommitted): contacts folded per pad/body pair with the contact point in the pad surface frame (`isaac/cell_command_server/contacts.py`, `PadContact.msg` extended, relay updated, `scene.contact_pads` now `{body, surface_frame}`); one contact subscription only; impulse computed; `start_in_script_editor.py` restarts and reloads the server; `kit_api.open_stage` accepts the bool that 5.1 returns (broke headless and `reload_stage`); `run_headless.py` prints a traceback on failure; `tools/pick_check.py` (new).
+
+Open:
+- `pad_surface_radius_m` is a sphere and misjudges: the contact points sit at y = 1.3-1.5 mm in the pad frame (y is the pad normal) and spread +/-10 mm in x, -12..+14 mm in z. `pick_u_orange` failed `pads` at 15.1 mm. Replace with a box test (|y| small, |x|, |z| within the pad half-sizes): needs the RG2 pad dimensions (TODO(mohammad)).
+- `watchdog_parts.yaml grasp_width_tolerance_m: 0.02` is loose enough to pass a fully closed gripper; pick_check adds the executor's 3 mm floor. The executor's own band is 5 mm.
+- `pick_inverted_u_yellow` pre-grasp: MoveIt failed 1 of 3 plans although IK is collision-free; pick_check retries 3 times, the executor may hit it too.
+- `move_group` segfaulted (signal 11, apport report) at the end of the session after the headless pick; cause not looked at.
+- The stale `/World/WatchdogIntruders/foreign_a41b84` is still in the saved stage.
 
 ## What Milestone 6 added
 
