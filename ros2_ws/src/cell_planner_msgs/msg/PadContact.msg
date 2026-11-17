@@ -23,6 +23,7 @@ geometry_msgs/Point point_world
 geometry_msgs/Point point_in_pad_frame
 # Distance of that point from the pad frame origin; -1 when unknown.
 float64 distance_to_pad_frame_m
-# found: the point is within scene.pad_surface_radius_m of the pad frame.
+# found: a contact point lies inside the pad face box (scene.pad_face, in the
+# pad frame).
 # lost: any point during the whole contact was.
 bool on_pad_surface

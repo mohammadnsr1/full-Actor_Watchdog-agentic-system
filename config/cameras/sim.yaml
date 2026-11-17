@@ -14,22 +14,36 @@
 cameras:
   camera1:
     role: wrist
-    enabled: false
-    # TODO(mohammad): wrist mount pose, from the hardware hand-eye calibration
-    # (BUILD_PLAN q1), expressed in the tcp or tool0 frame of the URDF.
-    parent_frame: ""
+    enabled: true
+    # Sim placement chosen 2026-11-17 (no hand-eye calibration yet; replace with
+    # the hardware calibration, BUILD_PLAN q1, when it exists). Pose of the ROS
+    # OPTICAL frame (z forward, x right, y down) in the URDF wrist_3_link frame
+    # (Mohammad, 2026-11-17: mount on wrist_3_link, not tcp). wrist_3_link has
+    # the tcp's axes (urdf wrist_3_link_to_TCP: xyz 0 0 0.15, rpy 0): +z is the
+    # approach axis, +x the finger closing axis; RG2 body spans y -36..+39 mm.
+    #   70 mm off-axis on the -y side, 30 mm out from the flange (120 mm behind
+    #   the tcp), tilted 18 deg toward the tool axis so the optical axis crosses
+    #   it ~95 mm in front of the tcp; image x = closing axis, the gripper sits
+    #   at the bottom of the image.
+    # setup_cameras.py converts this to the USD camera orientation.
+    parent_frame: wrist_3_link
+    parent_prim: /World/ur5e/wrist_3_link
     optical_frame: camera1_optical_frame
-    xyz: [0.0, 0.0, 0.0]
-    quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    xyz: [0.0, -0.07, 0.03]
+    quat_xyzw: [-0.156434, 0.0, 0.0, 0.987688]
     topics:
       rgb: /camera1/color/image_raw
       depth: /camera1/depth/image_raw
       camera_info: /camera1/color/camera_info
       poses: /camera1/poses
-    # TODO(mohammad): resolution and FOV matched to the Orbbec Gemini 335Lg
-    # when the prim is created (Milestone 6).
-    width: 0
-    height: 0
+    # Orbbec Gemini 335L(g) colour stream: 1280x800 (16:10), H 94 deg x V 68 deg
+    # (datasheet values as recalled 2026-11-17; TODO(mohammad): confirm).
+    # Rendered at half resolution to keep the sim fast; same aspect and FOV.
+    width: 640
+    height: 400
+    horizontal_fov_deg: 94.0
+    horizontal_aperture_mm: 20.955
+    clipping_range_m: [0.01, 10.0]
 
   camera2:
     role: table

@@ -5,3 +5,10 @@ cameras:
     xyz: [0.25, -0.2, 1.7]
     quat_xyzw: [0.0, 0.99863, -0.05234, 0.0]
     pointcloud_topic: /camera/depth/points
+  # camera1 (wrist): static relative to wrist_3_link, so a static TF moves with
+  # the arm. Same values as config/cameras/sim.yaml cameras.camera1 (keep in step).
+  - name: camera1
+    parent_frame: wrist_3_link
+    child_frame: camera1_optical_frame
+    xyz: [0.0, -0.07, 0.03]
+    quat_xyzw: [-0.156434, 0.0, 0.0, 0.987688]

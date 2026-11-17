@@ -11,18 +11,19 @@ PadContactTracker folds that into one event per (pad body, other body) pair:
 PhysX contact reports belong to rigid bodies (the finger links), and a finger
 link's collider is the whole finger, so a touch on the back of the finger is
 reported like a touch on the pad. Each pad may name a `surface_frame` (an Xform
-on the pad surface, e.g. left_contact_frame); the tracker then expresses the
-contact point closest to that frame in the frame's coordinates and flags
-`on_pad_surface` when it is within `surface_radius_m` of the frame origin.
+on the pad face, e.g. left_contact_frame); the tracker expresses the contact
+points in that frame and flags `on_pad_surface` when a point lies inside the
+pad face box `pad_face` (ranges per axis of the surface frame, metres).
 
 Config (config/platforms/sim.yaml scene):
 
     contact_pads:
       - body: /World/.../left_inner_finger                       # rigid body
         surface_frame: /World/.../left_inner_finger/left_contact_frame
-    pad_surface_radius_m: 0.015
+    pad_face: {x_m: [lo, hi], y_m: [lo, hi], z_m: [lo, hi]}
 
-A plain string entry is a body without a surface frame.
+A plain string entry is a body without a surface frame. Without `pad_face`,
+`on_pad_surface` is always false (the point and distance are still reported).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from typing import Any, Callable, Optional, Sequence
 
 Vec3 = Sequence[float]
 ToPadFrame = Callable[[str, Sequence[Vec3]], Sequence[Vec3]]
+Box = tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,20 @@ def parse_pads(raw: Any) -> list[Pad]:
     return out
 
 
+def parse_face(raw: Any) -> Optional[Box]:
+    """{x_m: [lo, hi], y_m: [lo, hi], z_m: [lo, hi]} -> box, or None when unset."""
+    if not raw:
+        return None
+    try:
+        box = tuple((float(raw[k][0]), float(raw[k][1])) for k in ("x_m", "y_m", "z_m"))
+    except (KeyError, TypeError, IndexError) as exc:
+        raise ValueError(f"scene.pad_face needs x_m, y_m, z_m as [lo, hi]: {raw!r}") from exc
+    for lo, hi in box:
+        if lo > hi:
+            raise ValueError(f"scene.pad_face range [{lo}, {hi}] is reversed")
+    return box  # type: ignore[return-value]
+
+
 def normalize_event_type(raw: Any) -> str:
     """'ContactEventType.CONTACT_FOUND' -> 'found' (also persist, lost)."""
     s = str(raw).lower()
@@ -66,10 +82,14 @@ def _norm(v: Vec3) -> float:
     return math.sqrt(sum(float(x) * float(x) for x in v))
 
 
+def _inside(p: Vec3, box: Box) -> bool:
+    return all(lo <= float(v) <= hi for v, (lo, hi) in zip(p, box))
+
+
 class PadContactTracker:
-    def __init__(self, pads: Sequence[Pad], surface_radius_m: Optional[float], to_pad_frame: ToPadFrame) -> None:
+    def __init__(self, pads: Sequence[Pad], face: Optional[Box], to_pad_frame: ToPadFrame) -> None:
         self.pads = {p.body: p for p in pads}
-        self.radius = float(surface_radius_m) if surface_radius_m else None
+        self.face = face
         self.to_pad_frame = to_pad_frame
         self._active: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -84,6 +104,8 @@ class PadContactTracker:
         self._active.clear()
 
     def _geometry(self, pad: str, points: Sequence[Vec3]) -> dict[str, Any]:
+        """Report a point inside the pad face if there is one, else the point
+        closest to the surface frame origin."""
         frame = self.pads[pad].surface_frame
         geo: dict[str, Any] = {"pad_frame": frame, "point_world": None, "point_in_pad_frame": None, "distance_m": None, "on_pad_surface": False}
         if not points:
@@ -92,13 +114,14 @@ class PadContactTracker:
             geo["point_world"] = [float(x) for x in points[0]]
             return geo
         local = list(self.to_pad_frame(frame, points))
-        best = min(range(len(points)), key=lambda i: _norm(local[i]))
-        dist = _norm(local[best])
+        order = sorted(range(len(points)), key=lambda i: _norm(local[i]))
+        on_face = [i for i in order if self.face is not None and _inside(local[i], self.face)]
+        best = on_face[0] if on_face else order[0]
         geo.update(
             point_world=[float(x) for x in points[best]],
             point_in_pad_frame=[float(x) for x in local[best]],
-            distance_m=dist,
-            on_pad_surface=self.radius is not None and dist <= self.radius,
+            distance_m=_norm(local[best]),
+            on_pad_surface=bool(on_face),
         )
         return geo
 
@@ -142,7 +165,7 @@ class PadContactTracker:
                 if not st["shapes"]:
                     del self._active[key]
                     ev = self._event("lost", pad, other, st["last"], st["peak_impulse"], 0)
-                    # on a lost event: was any point of this contact on the pad surface
+                    # on a lost event: was any point of this contact on the pad face
                     ev["on_pad_surface"] = st["on_pad_ever"]
                     events.append(ev)
         return events

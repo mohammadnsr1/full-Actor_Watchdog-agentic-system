@@ -15,6 +15,7 @@ the TODO values (empty parent_frame, zero size).
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -73,12 +74,21 @@ def setup_camera1(cfg: dict) -> dict:
         return {"error": f"parent prim {parent_prim} not on the stage"}
     cam_path = f"{parent_prim}/camera1"
     topics = cfg.get("topics", {})
-    created = K.create_camera(cam_path, cfg.get("xyz", [0, 0, 0]), cfg.get("quat_xyzw", [0, 0, 0, 1]), cfg.get("focal_length_mm"))
+    # The config pose is the ROS optical frame in parent_frame (what the static TF
+    # publishes); the USD camera looks along -Z, so convert.
+    usd_q = K.optical_to_usd_camera_xyzw(cfg.get("quat_xyzw", [0, 0, 0, 1]))
+    h_ap = float(cfg.get("horizontal_aperture_mm", 20.955))
+    hfov = cfg.get("horizontal_fov_deg")
+    focal = float(cfg["focal_length_mm"]) if cfg.get("focal_length_mm") else (
+        (h_ap / 2.0) / math.tan(math.radians(float(hfov)) / 2.0) if hfov else None)
+    v_ap = h_ap * height / width  # square pixels
+    created = K.create_camera(cam_path, cfg.get("xyz", [0, 0, 0]), usd_q, focal, h_ap, v_ap, cfg.get("clipping_range_m", [0.01, 10.0]))
     graph = K.build_ros2_camera_graph(
         CAMERA1_GRAPH, created, width, height, str(cfg.get("optical_frame", "camera1_optical_frame")),
         str(topics.get("rgb")), topics.get("depth"), str(topics.get("camera_info")),
     )
-    return {"camera": created, "graph": graph, "note": "save the stage to persist; the optical-frame TF is published by camera_tf.launch.py from cameras config"}
+    return {"camera": created, "usd_orient_xyzw": usd_q, "focal_length_mm": focal, "aperture_mm": [h_ap, v_ap], "graph": graph,
+            "note": "save the stage (timeline stopped) to persist; the optical-frame TF comes from sim_moveit_bringup/config/cameras.yaml"}
 
 
 def main() -> dict:
@@ -88,5 +98,7 @@ def main() -> dict:
     return out
 
 
-if __name__ == "__main__" or "omni" in sys.modules:
+# Run when executed (python or the Script Editor), not when imported as a module
+# (the cell command server's setup_cameras command imports it).
+if __name__ == "__main__" or ("omni" in sys.modules and __name__ != "isaac.cameras.setup_cameras"):
     main()

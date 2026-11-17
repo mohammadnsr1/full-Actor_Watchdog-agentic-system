@@ -152,3 +152,40 @@ class EpisodeRecording:
         self.dir.mkdir(parents=True, exist_ok=True)
         (self.dir / "recording.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return manifest
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Manual check: record `seconds` of the running cell into `episode_dir`.
+
+        python3 -m runner.recorder.episode_recording records/manual_test --seconds 10
+
+    Run from the repo root with the workspace sourced (cell_platform_interfaces).
+    """
+    import argparse
+
+    import yaml
+
+    from cell_platform_interfaces.platform_config import load_platform_config
+
+    parser = argparse.ArgumentParser(description="Record the running cell for a few seconds (manual check).")
+    parser.add_argument("episode_dir")
+    parser.add_argument("--seconds", type=float, default=10.0)
+    parser.add_argument("--platform", default=None, help="platform name (default: the platform config's default)")
+    parser.add_argument("--cell-config", default=str(Path(__file__).resolve().parents[2] / "config" / "cell.yaml"))
+    args = parser.parse_args(argv)
+
+    platform = load_platform_config(args.platform) if args.platform else load_platform_config()
+    with open(args.cell_config, "r", encoding="utf-8") as handle:
+        cell_config = yaml.safe_load(handle) or {}
+    rec = EpisodeRecording(args.episode_dir, platform, cell_config).start()
+    print(f"recording {args.seconds:.0f}s into {args.episode_dir} ...", flush=True)
+    try:
+        time.sleep(args.seconds)
+    except KeyboardInterrupt:
+        pass
+    print(json.dumps(rec.stop(), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

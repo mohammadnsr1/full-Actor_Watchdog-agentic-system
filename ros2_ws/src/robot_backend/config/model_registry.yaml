@@ -386,7 +386,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         # NOT RAISED, and the 5 cycles above breached it 3 times (27.38 /
@@ -461,7 +461,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 150.0
@@ -491,7 +491,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 150.0
@@ -521,7 +521,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 400.0
@@ -601,7 +601,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 100.0
@@ -633,7 +633,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 200.0
@@ -665,7 +665,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 250.0
@@ -697,7 +697,7 @@ objects:
         orientation_deg: 10.0
         lift_height_min_m: 0.05
         disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.02
+        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
         grasp_slip_tolerance_m: 0.02
       limits:
         max_clamp_effort: 170.0

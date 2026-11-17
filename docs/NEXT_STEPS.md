@@ -16,17 +16,17 @@ Updated 2026-11-11 at the end of Milestone 6 (v2): cell command server, headless
 | 3 reset + verify | PASS (all 13 prims within 0.05 mm; arm home, gripper open). |
 | 4 contacts | PASS via `tools/pick_check.py`: all four pick steps of `agents/tasks/fmb_assembly_2.executor.yaml` grasp, lift 200-300 mm, slip < 1 mm, found/lost on both pads, nothing else touched. Empty close shows nothing because `enabledSelfCollisions` is off. |
 | 5 headless | PASS with `isaac/headless/run_headless.sh` (wrapper sources `~/isaacsim/setup_ros_env.sh`); `/clock` and `/joint_states` ~38 Hz; `pick_line_green` passed on headless. |
-| 6 recording | not run |
-| 7 camera1 | not run (needs pose and size) |
+| 6 recording | PASS (headless): `python3 -m runner.recorder.episode_recording records/manual_test --seconds 10` gave a 9.4 s MCAP (1008 msgs: joint_states, tf, tf_static, camera1/2 poses) and 74 JPEG frames with frames.jsonl (sim-time stamps). Frames ~8 Hz effective against the 10 Hz setting (source /recorder_rgb ~34 Hz; ~0.8 s recorder start-up). Topics without a publisher (watchdog, pad_contacts without the relay) are simply absent from the bag. |
+| 7 camera1 | PASS (GUI): `/World/ur5e/wrist_3_link/camera1` + `/Graph/ROS_Camera1`, saved in the stage (timeline stopped). 640x400, H94 x V68 deg (fx 298.4), ~25 Hz rgb + depth + camera_info on `/camera1/...`, frame `camera1_optical_frame`. Mount (sim choice, not calibrated): optical frame at (0, -0.07, 0.03) in wrist_3_link, tilted 18 deg toward the tool axis. The static TF wrist_3_link -> camera1_optical_frame comes from `sim_moveit_bringup/config/cameras.yaml` (relaunch the cell). New server commands `setup_cameras`, `timeline(action)`, `save_stage` (refuses while playing). |
 
 Fixed on 2026-11-17 (uncommitted): contacts folded per pad/body pair with the contact point in the pad surface frame (`isaac/cell_command_server/contacts.py`, `PadContact.msg` extended, relay updated, `scene.contact_pads` now `{body, surface_frame}`); one contact subscription only; impulse computed; `start_in_script_editor.py` restarts and reloads the server; `kit_api.open_stage` accepts the bool that 5.1 returns (broke headless and `reload_stage`); `run_headless.py` prints a traceback on failure; `tools/pick_check.py` (new).
 
+Also 2026-11-17: on-pad test is now a box, `scene.pad_face` (pad face measured from the inner-finger collision mesh: plane y = 0 of the contact frames, 20.2 x 29.8 mm; all eight pick_check contacts inside, u_orange included); `grasp_width_tolerance_m` 0.02 -> 0.005 for the FMB parts in `model_registry.yaml` (regenerated `config/parts/*`, robot_backend rebuilt); stale intruder removed from the saved stage offline (backup kept outside the repo; git has the old file too); `python3 -m runner.recorder.episode_recording` CLI.
+
 Open:
-- `pad_surface_radius_m` is a sphere and misjudges: the contact points sit at y = 1.3-1.5 mm in the pad frame (y is the pad normal) and spread +/-10 mm in x, -12..+14 mm in z. `pick_u_orange` failed `pads` at 15.1 mm. Replace with a box test (|y| small, |x|, |z| within the pad half-sizes): needs the RG2 pad dimensions (TODO(mohammad)).
-- `watchdog_parts.yaml grasp_width_tolerance_m: 0.02` is loose enough to pass a fully closed gripper; pick_check adds the executor's 3 mm floor. The executor's own band is 5 mm.
+- `line_green`: plateau 25.8 mm against `grasp_width_m: 0.03` leaves 0.8 mm inside the new 5 mm band (the part is ~26 mm wide). Consider `grasp_width_m: 0.026` in `agents/tasks/fmb_assembly_2.executor.yaml`. Re-run `tools/pick_check.py` after the tolerance change.
 - `pick_inverted_u_yellow` pre-grasp: MoveIt failed 1 of 3 plans although IK is collision-free; pick_check retries 3 times, the executor may hit it too.
-- `move_group` segfaulted (signal 11, apport report) at the end of the session after the headless pick; cause not looked at.
-- The stale `/World/WatchdogIntruders/foreign_a41b84` is still in the saved stage.
+- camera1: Gemini 335L FOV/resolution are from memory (TODO(mohammad)); replace the mount with the hand-eye calibration when it exists (both camera files, keep in step). The RG2 housing fills the lower ~40% of the image; move the camera further out or reduce the tilt if that is too much.
 
 ## What Milestone 6 added
 
@@ -92,13 +92,10 @@ A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stal
 
 6. **Recording.** With the cell up:
 
+   From the repo root, workspace sourced:
+
    ```bash
-   python3 -c "
-   import yaml, time, sys; sys.path.insert(0, '.')
-   from cell_platform_interfaces.platform_config import load_platform_config
-   from runner.recorder.episode_recording import EpisodeRecording
-   rec = EpisodeRecording('records/manual_test', load_platform_config(), yaml.safe_load(open('config/cell.yaml'))).start()
-   time.sleep(10); print(rec.stop())"
+   python3 -m runner.recorder.episode_recording records/manual_test --seconds 10
    ls records/manual_test records/manual_test/frames/recorder | head
    ```
 

@@ -129,9 +129,16 @@ scene:
       surface_frame: /World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger/left_contact_frame
     - body: /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger
       surface_frame: /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger/right_contact_frame
-  # A contact point within this distance of the surface frame origin counts as
-  # on the pad. TODO(mohammad): tune from point_in_pad_frame of real grasps.
-  pad_surface_radius_m: 0.015
+  # The pad face in the surface frame (same for both fingers), measured
+  # 2026-11-17 from the inner-finger collision mesh in this stage: the face is
+  # the plane y = 0 (the finger body lies at y < 0, down to -24 mm), 20.2 mm
+  # in x and 29.8 mm in z. y_m is the normal band: PhysX contact points on a
+  # grasped part sit at y = +1.3..1.5 mm (contact offset). A contact point
+  # inside this box is on the pad.
+  pad_face:
+    x_m: [-0.0105, 0.0097]
+    y_m: [-0.002, 0.004]
+    z_m: [-0.0148, 0.0150]
   # Arm home pose: ur5e_moveit_config/config/ur5e.srdf group_state "home" (copied).
   home_joint_positions:
     shoulder_pan_joint: 0.0
@@ -157,6 +164,6 @@ signals:
   part_poses:      {status: available, source: ground_truth}     # follows poses.source
   robot_tf:        {status: available, source: robot_state_publisher}
   sim_time:        {status: available, source: clock}
-  camera1_frames:  {status: missing,   source: camera1}          # no wrist camera in the stage yet (BUILD_PLAN q5)
+  camera1_frames:  {status: available, source: camera1}          # /World/ur5e/wrist_3_link/camera1, added 2026-11-17
   camera2_frames:  {status: available, source: camera2}
   camera2_depth:   {status: available, source: camera2}

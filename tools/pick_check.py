@@ -9,7 +9,7 @@ checks the pick-side clauses of the instruction against simulator truth:
               step's grasp_width_m, and above 3 mm (not closed on nothing);
               the grasp is the executor's guarded move (see Cell.grasp)
     pads      a `found` contact on BOTH finger pads with the object, on the pad
-              surface (scene.contact_pads[].surface_frame, pad_surface_radius_m)
+              face (scene.contact_pads[].surface_frame, scene.pad_face box)
     only      no pad touched anything but the object
     lift      the object rose with the TCP (at least lift_height_min_m)
     slip      the object's pose in the TCP frame moved less than

@@ -59,7 +59,7 @@ def test_platform_name_from_cell_yaml_and_env(monkeypatch):
 def test_cameras_and_roles():
     p = load_platform_config("sim", REPO)
     assert p.camera("camera2")["role"] == "table"
-    assert p.camera_enabled("camera2") and not p.camera_enabled("camera1")
+    assert p.camera_enabled("camera2") and p.camera_enabled("camera1")  # camera1 added to the stage 2026-11-17
     assert p.camera_topic("camera2", "rgb") == "/camera/depth/rgb"
     assert p.camera_topic("recorder", "rgb") == "/recorder_rgb"
     with pytest.raises(MissingPlatformValue):

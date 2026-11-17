@@ -406,19 +406,50 @@ def world_to_local(path: str, points: Sequence[Sequence[float]]) -> list[list[fl
 # -- cameras and ROS 2 camera graphs ----------------------------------------------
 
 
-def create_camera(path: str, translate: Sequence[float], orient_xyzw: Sequence[float], focal_length_mm: float | None = None) -> str:
-    """A UsdGeom.Camera at `path` (parented by the path), posed locally."""
+def create_camera(
+    path: str,
+    translate: Sequence[float],
+    orient_xyzw: Sequence[float],
+    focal_length_mm: float | None = None,
+    horizontal_aperture_mm: float | None = None,
+    vertical_aperture_mm: float | None = None,
+    clipping_range_m: Sequence[float] | None = None,
+) -> str:
+    """A UsdGeom.Camera at `path` (parented by the path), posed locally.
+    `orient_xyzw` is the USD camera orientation (looks along its local -Z, +Y up),
+    not a ROS optical frame; see optical_to_usd_camera_xyzw."""
     from pxr import Gf, Sdf, UsdGeom, Vt
 
     cam = UsdGeom.Camera.Define(stage(), Sdf.Path(path))
     prim = cam.GetPrim()
-    prim.CreateAttribute("xformOp:translate", Sdf.ValueTypeNames.Double3, custom=False).Set(Gf.Vec3d(*translate))
+    prim.CreateAttribute("xformOp:translate", Sdf.ValueTypeNames.Double3, custom=False).Set(Gf.Vec3d(*[float(v) for v in translate]))
     q = Gf.Quatd(float(orient_xyzw[3]), Gf.Vec3d(float(orient_xyzw[0]), float(orient_xyzw[1]), float(orient_xyzw[2])))
     prim.CreateAttribute("xformOp:orient", Sdf.ValueTypeNames.Quatd, custom=False).Set(q)
     prim.CreateAttribute("xformOpOrder", Sdf.ValueTypeNames.TokenArray, custom=False).Set(Vt.TokenArray(["xformOp:translate", "xformOp:orient"]))
     if focal_length_mm:
         cam.CreateFocalLengthAttr().Set(float(focal_length_mm))
+    if horizontal_aperture_mm:
+        cam.CreateHorizontalApertureAttr().Set(float(horizontal_aperture_mm))
+    if vertical_aperture_mm:
+        cam.CreateVerticalApertureAttr().Set(float(vertical_aperture_mm))
+    if clipping_range_m:
+        cam.CreateClippingRangeAttr().Set(Gf.Vec2f(float(clipping_range_m[0]), float(clipping_range_m[1])))
     return str(prim.GetPath())
+
+
+def optical_to_usd_camera_xyzw(q_xyzw: Sequence[float]) -> list[float]:
+    """ROS optical frame (z forward, x right, y down) -> USD camera orientation
+    (looks along -Z, +Y up): q_usd = q_optical * Rx(180 deg). Checked against the
+    stage's camera2: config optical (0, 0.99863, -0.05234, 0) <-> USD (0, 0.0523, 0.9986, 0)."""
+    x, y, z, w = (float(v) for v in q_xyzw)
+    # (x, y, z, w) * (1, 0, 0, 0)
+    return [w, z, -y, -x]
+
+
+def save_stage() -> bool:
+    """Save the open stage to its file (omni.usd). 5.1 returns a bool; accept a tuple too."""
+    result = usd_context().save_stage()
+    return bool(result[0]) if isinstance(result, tuple) else bool(result)
 
 
 def build_ros2_camera_graph(
@@ -437,6 +468,9 @@ def build_ros2_camera_graph(
     they are unchanged in 6.x (isaacsim.ros2.bridge.*)."""
     import omni.graph.core as og
 
+    # Idempotent: rebuild from scratch (CREATE_NODES fails on existing nodes).
+    if prim_exists(graph_path):
+        remove_prim(graph_path)
     keys = og.Controller.Keys
     nodes = [
         ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),

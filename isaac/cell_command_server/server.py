@@ -113,6 +113,9 @@ class CellCommandServer:
             "contacts_enable": self._cmd_contacts_enable,
             "contacts_poll": self._cmd_contacts_poll,
             "capture_layout": self._cmd_capture_layout,
+            "setup_cameras": self._cmd_setup_cameras,
+            "timeline": self._cmd_timeline,
+            "save_stage": self._cmd_save_stage,
             "list_commands": lambda p: {"ok": True, "commands": sorted(self.commands)},
         }
 
@@ -390,7 +393,7 @@ class CellCommandServer:
             return {"ok": False, "error": "scene.contact_pads is empty (TODO(mohammad))"}
         missing_frames = [pd.surface_frame for pd in pads if pd.surface_frame and not K.prim_exists(pd.surface_frame)]
         info = {"pads": [pd.body for pd in pads], "surface_frames": [pd.surface_frame for pd in pads],
-                "missing_surface_frames": missing_frames, "pad_surface_radius_m": self.scene.get("pad_surface_radius_m")}
+                "missing_surface_frames": missing_frames, "pad_face": self.scene.get("pad_face")}
         if self._contact_sub is not None:
             # One subscription only: a second relay must not double every event.
             return {"ok": True, "enabled": True, "already_enabled": True, **info}
@@ -398,7 +401,7 @@ class CellCommandServer:
         if not applied:
             return {"ok": False, "error": f"none of the contact pads exist on the stage: {info['pads']}"}
         pads = [pd if pd.surface_frame not in missing_frames else C.Pad(pd.body) for pd in pads if pd.body in applied]
-        self._tracker = C.PadContactTracker(pads, self.scene.get("pad_surface_radius_m"), K.world_to_local)
+        self._tracker = C.PadContactTracker(pads, C.parse_face(self.scene.get("pad_face")), K.world_to_local)
 
         def _on_contacts(reports: list[dict[str, Any]]) -> None:
             if self._tracker is None:
@@ -427,6 +430,35 @@ class CellCommandServer:
         events = [e for e in self._contacts if e["seq"] > since]
         active = self._tracker.active() if self._tracker is not None else []
         return {"ok": True, "enabled": self._contacts_enabled, "events": events[-500:], "last_seq": self._contact_seq, "active": active}
+
+    def _cmd_setup_cameras(self, _p: dict[str, Any]) -> dict[str, Any]:
+        """isaac/cameras/setup_cameras.py: create/refresh camera1, check camera2."""
+        import importlib
+
+        from isaac.cameras import setup_cameras as SC
+
+        SC = importlib.reload(SC)
+        report = SC.main()
+        cam1 = report.get("camera1", {})
+        return {"ok": "error" not in cam1, **report}
+
+    def _cmd_timeline(self, p: dict[str, Any]) -> dict[str, Any]:
+        action = str(p.get("action", "") or "")
+        if action == "play":
+            K.play()
+        elif action == "stop":
+            K.stop()
+        elif action:
+            return {"ok": False, "error": f"timeline action {action!r}: use play or stop"}
+        return {"ok": True, "playing": K.is_playing()}
+
+    def _cmd_save_stage(self, _p: dict[str, Any]) -> dict[str, Any]:
+        # Saving while playing would write simulated poses and joint states into
+        # the file; stop first (timeline stop restores the authored state).
+        if K.is_playing():
+            return {"ok": False, "error": "timeline is playing: send timeline(action=stop) first, then save_stage"}
+        ok = K.save_stage()
+        return {"ok": ok, "stage": K.stage_path()}
 
     def _cmd_capture_layout(self, p: dict[str, Any]) -> dict[str, Any]:
         """Write the current poses of the stage's parts as a layout file."""
