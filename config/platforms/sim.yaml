@@ -121,9 +121,17 @@ scene:
   robot_prim: /World/ur5e/root_joint
   tcp_prim: /World/ur5e/tcp
   intruder_root: /World/WatchdogIntruders
+  # PhysX contact reports attach to rigid bodies (the finger links, whose
+  # collider is the whole finger); surface_frame is the Xform on the pad
+  # surface used to tell a pad touch from a touch elsewhere on the finger.
   contact_pads:
-    - /World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger
-    - /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger
+    - body: /World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger
+      surface_frame: /World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger/left_contact_frame
+    - body: /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger
+      surface_frame: /World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger/right_contact_frame
+  # A contact point within this distance of the surface frame origin counts as
+  # on the pad. TODO(mohammad): tune from point_in_pad_frame of real grasps.
+  pad_surface_radius_m: 0.015
   # Arm home pose: ur5e_moveit_config/config/ur5e.srdf group_state "home" (copied).
   home_joint_positions:
     shoulder_pan_joint: 0.0

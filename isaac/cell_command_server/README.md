@@ -5,8 +5,8 @@ Kit's main thread. Config: `config/platforms/sim.yaml: scene`.
 
 ```bash
 # from the ROS side, any Python:
-printf '{"command":"health"}\n' | nc 127.0.0.1 9010
-printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":3}}\n' | nc 127.0.0.1 9010
+printf '{"command":"health"}\n' | nc -N 127.0.0.1 9010
+printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":3}}\n' | nc -N 127.0.0.1 9010
 ```
 
 | Command | Params | Does |

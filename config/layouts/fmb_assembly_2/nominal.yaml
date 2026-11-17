@@ -1,41 +1,197 @@
-# Seeded layout for fmb_assembly_2 (Milestone 6). Read by the cell command
-# server's load_layout and by the episode runner.
-#
-# TODO(mohammad): the part poses are unknown to me. Capture them from the
-# stage as it is saved (the parts' resting poses) with
-#
-#     printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc 127.0.0.1 9010
-#
-# which overwrites this file with the measured poses, then fill
-# verify_tolerances and, if you want variation across episodes, the per-part
-# jitter ranges. Fixtures are never jittered. Nothing below is invented: the
-# prim paths are read from the stage's TF publisher list; positions are null.
-
+# Captured by cell_command_server capture_layout; fill verify_tolerances and jitter.
 assembly: fmb_assembly_2
 name: nominal
 frame: world
-
+captured_wall_time_iso: '2026-11-17T21:07:18.658600Z'
+stage: /home/mohammad/full-Actor_Watchdog-agentic-system/assets/usd/assembly_room.usd
 verify_tolerances:
-  position_m: null        # TODO(mohammad)
-  orientation_deg: null   # TODO(mohammad)
+  position_m: 0.005
+  orientation_deg: 2.0
 
 parts:
-  u_brown:           {prim: /World/u_brown,           position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
-  u_orange:          {prim: /World/u_orange,          position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
-  line_green:        {prim: /World/line_green,        position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
-  inverted_u_yellow: {prim: /World/inverted_u_yellow, position: null, orientation_xyzw: null, jitter: {xy_m: 0.0, yaw_deg: 0.0}}
-  # bystanders (the other assembly's parts): placed, never jittered
-  u_green:           {prim: /World/u_green,           position: null, orientation_xyzw: null}
-  inverted_u_brown:  {prim: /World/inverted_u_brown,  position: null, orientation_xyzw: null}
-  hex_blue:          {prim: /World/hex_blue,          position: null, orientation_xyzw: null}
-  hex_red:           {prim: /World/hex_red,           position: null, orientation_xyzw: null}
-
-fixtures:
-  - base1
-  - base2
-
+  u_green:
+    prim: /World/u_green
+    position:
+    - -0.38478147983551025
+    - -0.3396889269351959
+    - 0.026926249265670776
+    orientation_xyzw:
+    - -0.0002451478478520912
+    - -0.0002431292167343426
+    - 5.159167157384569e-08
+    - 0.9999999403953552
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  base2:
+    prim: /World/base2
+    position:
+    - -0.18255174160003662
+    - -0.10530306398868561
+    - 0.01412988267838955
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  hex_blue:
+    prim: /World/hex_blue
+    position:
+    - 0.7770674228668213
+    - -0.04576887935400009
+    - 0.07487928122282028
+    orientation_xyzw:
+    - -9.834764724403237e-06
+    - 0.7070766203110792
+    - 0.7071369402125454
+    - 2.6449548386239698e-05
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  hex_red:
+    prim: /World/hex_red
+    position:
+    - 0.11455512791872025
+    - 0.03938430920243263
+    - 0.07487934082746506
+    orientation_xyzw:
+    - 0.7070861078701075
+    - 1.1324882853226252e-05
+    - -5.1990152993297876e-05
+    - 0.7071274518966675
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  inverted_u_brown:
+    prim: /World/inverted_u_brown
+    position:
+    - 0.8301870822906494
+    - -0.27310681343078613
+    - 0.0748753696680069
+    orientation_xyzw:
+    - 0.5001070400639908
+    - 0.5001351138511255
+    - -0.4998650154086608
+    - -0.4998927712440491
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  u_green_reorient:
+    prim: /World/u_green_reorient
+    position:
+    - -0.003438846129987294
+    - -0.23107147454146515
+    - 0.08
+    orientation_xyzw:
+    - -0.7071067811865475
+    - 0.0
+    - 0.0
+    - 0.7071067811865476
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  inverted_u_brown_reorient:
+    prim: /World/inverted_u_brown_reorient
+    position:
+    - 0.0
+    - -0.2
+    - 0.085
+    orientation_xyzw:
+    - -0.7071067811865475
+    - 0.0
+    - 0.0
+    - 0.7071067811865476
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  u_orange:
+    prim: /World/u_orange
+    position:
+    - 0.34489884972572327
+    - -0.017051802948117256
+    - 0.03987929970026016
+    orientation_xyzw:
+    - 0.7072159115049022
+    - -2.708792114023199e-05
+    - -2.7216214464009728e-05
+    - -0.7069976329803465
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  u_brown:
+    prim: /World/u_brown
+    position:
+    - 0.21602563560009003
+    - -0.31123197078704834
+    - 0.03987877443432808
+    orientation_xyzw:
+    - -0.7027253749154712
+    - 0.07853735507196224
+    - -0.07853929222298375
+    - 0.7027378678321837
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  line_green:
+    prim: /World/line_green
+    position:
+    - 0.6102436780929565
+    - -0.22728826105594635
+    - 0.01782876066863537
+    orientation_xyzw:
+    - -1.61276933853755e-08
+    - -2.2646752628110017e-08
+    - 0.41050214660908757
+    - 0.9118596315383911
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  inverted_u_yellow:
+    prim: /World/inverted_u_yellow
+    position:
+    - 0.19496577978134155
+    - -0.20647688210010529
+    - 0.03987501561641693
+    orientation_xyzw:
+    - 0.7072640549570534
+    - 4.1225686057958034e-07
+    - -4.495086545494596e-07
+    - -0.7069494724273682
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  base1:
+    prim: /World/base1
+    position:
+    - 0.40277692675590515
+    - -0.19857022166252136
+    - 0.022378159686923027
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
+  u_orange_reorient:
+    prim: /World/u_orange_reorient
+    position:
+    - 0.18899942294818
+    - -0.19662043919941574
+    - 0.04
+    orientation_xyzw:
+    - -0.7071067811865475
+    - 0.0
+    - 0.0
+    - 0.7071067811865476
+    jitter:
+      xy_m: 0.0
+      yaw_deg: 0.0
 robot:
-  # From ur5e_moveit_config/config/ur5e.srdf group_state "home" (copied).
   home_joint_positions:
     shoulder_pan_joint: 0.0
     shoulder_lift_joint: -1.5708
@@ -43,4 +199,4 @@ robot:
     wrist_1_joint: -1.5708
     wrist_2_joint: -1.5708
     wrist_3_joint: 0.0
-  gripper_open_position: -0.558505   # RG2 open, master joint rad (rg2_controller.py:66)
+  gripper_open_position: -0.558505

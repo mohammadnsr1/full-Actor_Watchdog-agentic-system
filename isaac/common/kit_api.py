@@ -339,32 +339,65 @@ def enable_contact_report(paths: Sequence[str]) -> list[str]:
     return applied
 
 
+def _vec3(v: Any) -> list[float]:
+    """carb.Float3 (x, y, z attributes) or any 3-sequence -> [x, y, z]."""
+    if hasattr(v, "x"):
+        return [float(v.x), float(v.y), float(v.z)]
+    return [float(v[0]), float(v[1]), float(v[2])]
+
+
 def subscribe_contact_reports(callback: Callable[[list[dict[str, Any]]], None]) -> Any:
-    """callback(list of {body0, body1, normal_force, event}) per physics step.
+    """callback(list of {body0, body1, collider0, collider1, event, points, impulse})
+    per physics step: one entry per shape pair; points are world contact positions,
+    impulse the summed impulse magnitude of the pair this step.
     omni.physx: get_physx_simulation_interface().subscribe_contact_report_events
     (same on 5.x and 6.x)."""
     from omni.physx import get_physx_simulation_interface
     from pxr import PhysicsSchemaTools
 
+    def _path(i: Any) -> str:
+        try:
+            return str(PhysicsSchemaTools.intToSdfPath(i))
+        except Exception:
+            return str(i)
+
     def _on_report(contact_headers, contact_data):
         out = []
         for h in contact_headers:
-            try:
-                b0 = PhysicsSchemaTools.intToSdfPath(h.actor0)
-                b1 = PhysicsSchemaTools.intToSdfPath(h.actor1)
-            except Exception:
-                b0, b1 = str(h.actor0), str(h.actor1)
-            force = 0.0
+            points: list[list[float]] = []
+            impulse = 0.0
             try:
                 for i in range(h.contact_data_offset, h.contact_data_offset + h.num_contact_data):
-                    force += float(contact_data[i].impulse.GetLength()) if hasattr(contact_data[i], "impulse") else 0.0
+                    d = contact_data[i]
+                    points.append(_vec3(d.position))
+                    imp = _vec3(d.impulse)
+                    impulse += math.sqrt(imp[0] ** 2 + imp[1] ** 2 + imp[2] ** 2)
             except Exception:
                 pass
-            out.append({"body0": str(b0), "body1": str(b1), "event": str(h.type), "impulse": force})
+            out.append({
+                "body0": _path(h.actor0), "body1": _path(h.actor1),
+                "collider0": _path(getattr(h, "collider0", "")), "collider1": _path(getattr(h, "collider1", "")),
+                "event": str(h.type), "points": points, "impulse": impulse,
+            })
         if out:
             callback(out)
 
     return get_physx_simulation_interface().subscribe_contact_report_events(_on_report)
+
+
+def world_to_local(path: str, points: Sequence[Sequence[float]]) -> list[list[float]]:
+    """World points expressed in the frame of the prim at `path`."""
+    from pxr import Gf, Usd, UsdGeom
+
+    prim = stage().GetPrimAtPath(path)
+    if not prim.IsValid():
+        raise LookupError(f"no prim at {path}")
+    inv = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).GetInverse()
+    out = []
+    for p in points:
+        q = inv.Transform(Gf.Vec3d(float(p[0]), float(p[1]), float(p[2])))
+        out.append([float(q[0]), float(q[1]), float(q[2])])
+    return out
 
 
 # -- cameras and ROS 2 camera graphs ----------------------------------------------

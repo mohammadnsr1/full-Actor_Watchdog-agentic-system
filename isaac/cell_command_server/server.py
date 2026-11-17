@@ -15,8 +15,11 @@ Commands
                                 are unless a layout was loaded)
     verify_reset(tolerances)    compare parts with the last loaded layout
     reload_stage                reopen the stage file from disk
-    contacts_enable(enable)     contact reports on the finger pads; contacts_poll(since)
-                                returns them for the ROS-side relay
+    contacts_enable(enable)     contact reports on the finger pads (one subscription,
+                                folded per pad/body pair into found/lost events with
+                                the contact point against the pad surface frame,
+                                see contacts.py); contacts_poll(since) returns them
+                                and the active pairs for the ROS-side relay
     capture_layout(name)        write the current part poses as a layout file (helper)
 
 Config: config/platforms/sim.yaml `scene` (port, prim paths, home joints,
@@ -42,6 +45,7 @@ from typing import Any
 
 import yaml
 
+from isaac.cell_command_server import contacts as C
 from isaac.cell_command_server import layouts as L
 from isaac.common import kit_api as K
 
@@ -95,6 +99,7 @@ class CellCommandServer:
         self._contacts: list[dict[str, Any]] = []
         self._contact_seq = 0
         self._contact_sub: Any = None
+        self._tracker: C.PadContactTracker | None = None
         self._contacts_enabled = False
         self._articulation: Any = None
         self._started_wall = wall_time_iso()
@@ -128,6 +133,11 @@ class CellCommandServer:
     def stop(self) -> None:
         self._stop.set()
         self._sub = None
+        self._contact_sub = None
+        self._tracker = None
+        self._contacts_enabled = False
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
         if self._sock:
             try:
                 self._sock.close()
@@ -362,6 +372,7 @@ class CellCommandServer:
         self._articulation = None
         self._contacts_enabled = False
         self._contact_sub = None
+        self._tracker = None
         ok = K.reopen_stage()
         if ok and bool(self.scene.get("play_after_reload", True)):
             K.play()
@@ -369,18 +380,35 @@ class CellCommandServer:
 
     def _cmd_contacts_enable(self, p: dict[str, Any]) -> dict[str, Any]:
         enable = bool(p.get("enable", True))
-        pads = [str(x) for x in (self.scene.get("contact_pads") or [])]
         if not enable:
             self._contact_sub = None
+            self._tracker = None
             self._contacts_enabled = False
             return {"ok": True, "enabled": False}
+        pads = C.parse_pads(self.scene.get("contact_pads"))
         if not pads:
             return {"ok": False, "error": "scene.contact_pads is empty (TODO(mohammad))"}
-        applied = K.enable_contact_report(pads)
+        missing_frames = [pd.surface_frame for pd in pads if pd.surface_frame and not K.prim_exists(pd.surface_frame)]
+        info = {"pads": [pd.body for pd in pads], "surface_frames": [pd.surface_frame for pd in pads],
+                "missing_surface_frames": missing_frames, "pad_surface_radius_m": self.scene.get("pad_surface_radius_m")}
+        if self._contact_sub is not None:
+            # One subscription only: a second relay must not double every event.
+            return {"ok": True, "enabled": True, "already_enabled": True, **info}
+        applied = K.enable_contact_report([pd.body for pd in pads])
         if not applied:
-            return {"ok": False, "error": f"none of the contact pads exist on the stage: {pads}"}
+            return {"ok": False, "error": f"none of the contact pads exist on the stage: {info['pads']}"}
+        pads = [pd if pd.surface_frame not in missing_frames else C.Pad(pd.body) for pd in pads if pd.body in applied]
+        self._tracker = C.PadContactTracker(pads, self.scene.get("pad_surface_radius_m"), K.world_to_local)
 
-        def _on_contacts(events: list[dict[str, Any]]) -> None:
+        def _on_contacts(reports: list[dict[str, Any]]) -> None:
+            if self._tracker is None:
+                return
+            try:
+                events = self._tracker.feed(reports)
+            except Exception as exc:  # noqa: BLE001
+                events = [{"event": "error", "error": f"{type(exc).__name__}: {exc}"}]
+            if not events:
+                return
             t = K.sim_time_s()
             stamp = wall_time_iso()
             for e in events:
@@ -391,12 +419,14 @@ class CellCommandServer:
 
         self._contact_sub = K.subscribe_contact_reports(_on_contacts)
         self._contacts_enabled = True
-        return {"ok": True, "enabled": True, "pads": applied}
+        info["pads"] = applied
+        return {"ok": True, "enabled": True, **info}
 
     def _cmd_contacts_poll(self, p: dict[str, Any]) -> dict[str, Any]:
         since = int(p.get("since_seq", 0) or 0)
         events = [e for e in self._contacts if e["seq"] > since]
-        return {"ok": True, "enabled": self._contacts_enabled, "events": events[-500:], "last_seq": self._contact_seq}
+        active = self._tracker.active() if self._tracker is not None else []
+        return {"ok": True, "enabled": self._contacts_enabled, "events": events[-500:], "last_seq": self._contact_seq, "active": active}
 
     def _cmd_capture_layout(self, p: dict[str, Any]) -> dict[str, Any]:
         """Write the current poses of the stage's parts as a layout file."""

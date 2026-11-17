@@ -29,8 +29,8 @@ A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stal
 1. **Command server in the GUI first** (lowest risk). Isaac open, stage playing. Paste `isaac/cell_command_server/start_in_script_editor.py` into the Script Editor and run it. Expect `cell command server: 127.0.0.1 9010 commands: [...]`. Then from a terminal:
 
    ```bash
-   printf '{"command":"health"}\n' | nc 127.0.0.1 9010
-   printf '{"command":"report_poses"}\n' | nc 127.0.0.1 9010 | python3 -m json.tool | head -40
+   printf '{"command":"health"}\n' | nc -N 127.0.0.1 9010
+   printf '{"command":"report_poses"}\n' | nc -N 127.0.0.1 9010 | python3 -m json.tool | head -40
    ```
 
    Expect `"ok": true`, `playing: true`, `sim_advancing: true`, 23 TF prims, and the stale intruder listed. Paste both outputs.
@@ -38,7 +38,7 @@ A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stal
 2. **Capture the nominal layout**, then look at the file:
 
    ```bash
-   printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc 127.0.0.1 9010
+   printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc -N 127.0.0.1 9010
    ```
 
    It overwrites `config/layouts/fmb_assembly_2/nominal.yaml` with the measured poses. Fill `verify_tolerances` (and jitter ranges if you want variation).
@@ -46,8 +46,8 @@ A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stal
 3. **Reset and verify.** Move a part by hand in the viewport, then:
 
    ```bash
-   printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":0}}\n' | nc 127.0.0.1 9010
-   printf '{"command":"verify_reset"}\n' | nc 127.0.0.1 9010
+   printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":0}}\n' | nc -N 127.0.0.1 9010
+   printf '{"command":"verify_reset"}\n' | nc -N 127.0.0.1 9010
    ```
 
    Expect the part back in place, the arm at the SRDF home pose, the gripper open, `removed_intruders` listing the stale prim once, and `verify_reset` passing within your tolerances. This is the first time the experimental prim API is exercised on this stage: if `teleport` or the articulation calls raise, paste the `traceback` field of the response. Then `seed: 3` to see jitter if you set ranges.

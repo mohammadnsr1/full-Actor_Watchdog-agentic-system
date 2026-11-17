@@ -42,15 +42,29 @@ class PadContactsRelay(Node):
             self.get_logger().warning(f"contacts_poll: {resp.get('error')}", throttle_duration_sec=5.0)
             return
         for e in resp.get("events", []):
+            self.last_seq = max(self.last_seq, int(e.get("seq", 0)))
+            if e.get("event") == "error":
+                self.get_logger().warning(f"contact tracker: {e.get('error')}", throttle_duration_sec=5.0)
+                continue
             msg = self._Msg()
             msg.wall_time_iso = str(e.get("wall_time_iso", ""))
             msg.sim_time = float(e.get("sim_time_s", 0.0))
-            msg.pad = str(e.get("body0", ""))
-            msg.body = str(e.get("body1", ""))
+            msg.pad = str(e.get("pad", ""))
+            msg.body = str(e.get("body", ""))
             msg.event = str(e.get("event", ""))
-            msg.impulse = float(e.get("impulse", 0.0))
+            msg.impulse = float(e.get("impulse", 0.0) or 0.0)
+            msg.shape_pairs = int(e.get("shape_pairs", 0) or 0)
+            msg.pad_frame = str(e.get("pad_frame", "") or "")
+            pw, pl = e.get("point_world"), e.get("point_in_pad_frame")
+            msg.has_point = pw is not None
+            if pw is not None:
+                msg.point_world.x, msg.point_world.y, msg.point_world.z = (float(v) for v in pw)
+            if pl is not None:
+                msg.point_in_pad_frame.x, msg.point_in_pad_frame.y, msg.point_in_pad_frame.z = (float(v) for v in pl)
+            d = e.get("distance_m")
+            msg.distance_to_pad_frame_m = float(d) if d is not None else -1.0
+            msg.on_pad_surface = bool(e.get("on_pad_surface", False))
             self.pub.publish(msg)
-            self.last_seq = max(self.last_seq, int(e.get("seq", 0)))
 
 
 def main(args: list[str] | None = None) -> int:
