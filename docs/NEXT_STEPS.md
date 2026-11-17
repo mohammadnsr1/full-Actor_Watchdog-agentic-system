@@ -13,7 +13,7 @@ Updated 2026-11-11 at the end of Milestone 6 (v2): cell command server, headless
 |---|---|
 | `isaac/common/kit_api.py` | The only Kit-version-specific module: stage, timeline, poses, teleport, articulation joints, episode-joint cleanup, contact reports, camera prims and ROS 2 camera graphs. Uses `isaacsim.core.experimental.prims` (present on 5.1, primary on 6.x) with the classic API as fallback, so the 6.1/6.2 move touches this file only. |
 | `isaac/cell_command_server/` | `server.py`: loopback TCP (port `scene.port`, 9010), newline JSON, every command on Kit's main thread. `health`, `report_poses`, `load_layout(assembly, layout, seed)`, `reset`, `verify_reset`, `reload_stage`, `contacts_enable`/`contacts_poll`, `capture_layout`. `layouts.py`: seeded placements (deterministic per seed, jitter ranges per part, fixtures never moved). `start_in_script_editor.py` for the GUI workflow. |
-| `isaac/headless/run_headless.py` | `~/isaacsim/python.sh isaac/headless/run_headless.py`: headless app, ROS 2 bridge on, stage open, server up, Play. `--gui` for debugging. |
+| `isaac/headless/run_headless.py` | `isaac/headless/run_headless.sh`: headless app, ROS 2 bridge on, stage open, server up, Play. `--gui` for debugging. |
 | `isaac/cameras/setup_cameras.py` | Verifies camera2 (`/World/Camera`, `/Graph/ROS_Camera`) against `config/cameras/sim.yaml`; creates camera1 under the wrist with a ROS 2 graph of the same shape once its pose and size are filled and `enabled: true`. |
 | `config/layouts/fmb_assembly_2/nominal.yaml` | Layout schema with prim paths from the stage, home pose from the SRDF, gripper open from the controller; **positions null** until you capture them. |
 | `config/platforms/sim.yaml: scene` | Port, robot and TCP prims, intruder root, finger pads, home pose. `pad_contacts` signal is now `available`. |
@@ -64,7 +64,7 @@ A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stal
 5. **Headless.** Close the GUI Isaac, then:
 
    ```bash
-   ~/isaacsim/python.sh isaac/headless/run_headless.py
+   isaac/headless/run_headless.sh
    ```
 
    Expect the `[headless] stage ... playing=True server 127.0.0.1:9010` line, then bring the cell up as usual and confirm `/joint_states` and `/clock` flow. Paste any error: the ROS 2 bridge in headless mode is the step most likely to need a tweak (sourcing).

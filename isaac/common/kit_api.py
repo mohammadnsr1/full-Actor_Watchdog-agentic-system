@@ -92,9 +92,12 @@ def stage_path() -> str:
 
 
 def open_stage(path: str) -> bool:
-    """Blocking open (5.x and 6.x: omni.usd)."""
-    ok, _err = usd_context().open_stage(path)
-    return bool(ok)
+    """Blocking open (omni.usd). UsdContext.open_stage returns a bool on 5.1
+    (checked 2026-11-17); some Kit versions return (ok, error). Accept both."""
+    result = usd_context().open_stage(path)
+    if isinstance(result, tuple):
+        return bool(result[0])
+    return bool(result)
 
 
 def reopen_stage() -> bool:

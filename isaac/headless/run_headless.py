@@ -1,6 +1,8 @@
 """Headless Isaac Sim for the 24/7 loop.
 
-    ~/isaacsim/python.sh isaac/headless/run_headless.py [--stage PATH] [--gui]
+    isaac/headless/run_headless.sh [--stage PATH] [--gui]
+    (the wrapper sources ~/isaacsim/setup_ros_env.sh like isaac-sim.sh does,
+    then runs this file with ~/isaacsim/python.sh)
 
 Opens assembly_room.usd, enables the ROS 2 bridge, starts the cell command
 server, presses Play, and keeps the app updating until SIGINT. The GUI
@@ -9,9 +11,9 @@ cell_command_server/start_in_script_editor.py) keeps working; this script is
 the unattended alternative, not a replacement.
 
 Notes for Mohammad:
-  * TODO(mohammad): confirm whether the ROS 2 bridge in headless mode wants the
-    system ROS sourced in this shell or its bundled libs (Isaac's docs cover
-    both; the stage's graphs use isaacsim.ros2.bridge nodes either way).
+  * ROS 2 bridge: launched bare through python.sh, the bridge's internal Jazzy
+    fails (libament_index_cpp.so not found, 2026-11-17) because python.sh does
+    not source setup_ros_env.sh. run_headless.sh does, matching the GUI.
   * Isaac 5.1: `from isaacsim.simulation_app import SimulationApp`. On 6.x the
     same import exists; if it moves, this is the only place to change.
 """
@@ -73,6 +75,13 @@ def main() -> int:
             app.update()
         server.stop()
         return 0
+    except BaseException:
+        # Kit routes Python stderr into its log as "[Error] [py stderr]" lines and
+        # app.close() exits with status 0, so make a failure impossible to miss.
+        import traceback
+
+        print("[headless] FAILED:\n" + traceback.format_exc(), file=sys.stderr, flush=True)
+        return 1
     finally:
         app.close()
 
