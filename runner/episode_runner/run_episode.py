@@ -299,6 +299,17 @@ def main(argv: list[str] | None = None) -> int:
     requirements = yaml.safe_load(req_path.read_text()) or {}
     wd_parts = (yaml.safe_load((REPO / "config" / "parts" / "watchdog_parts.yaml").read_text()) or {}).get("parts") or {}
 
+    # One episode at a time on the cell (an authoring session and a manual run
+    # must not drive the same arm). Held until the process exits.
+    import fcntl
+
+    (REPO / "records").mkdir(exist_ok=True)
+    lock = open(REPO / "records" / ".cell.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit("another episode is running on the cell (records/.cell.lock is held)")
+
     episode_id = args.episode_id or f"{args.assembly}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-s{args.seed}"
     ep = REPO / "records" / episode_id
     if ep.exists():

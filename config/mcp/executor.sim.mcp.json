@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "EXECUTOR AUTHORING MCP config (sim, Milestone 7): the executor-authoring server ONLY,",
+    "launched by runner/run_authoring.sh with --strict-mcp-config. AUTHORING_SESSION_DIR and",
+    "AUTHORING_TASK come from the launcher's environment. The server runs no ROS itself;",
+    "each episode runs runner/episode_runner/run.sh (which sources ROS)."
+  ],
+  "mcpServers": {
+    "executor-authoring": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "unset VIRTUAL_ENV && cd ~/full-Actor_Watchdog-agentic-system && exec ros2_ws/.venv/bin/python executor/authoring_mcp/server.py"
+      ],
+      "env": {
+        "CELL_PLATFORM": "sim",
+        "CELL_REPO_ROOT": "/home/mohammad/full-Actor_Watchdog-agentic-system"
+      }
+    }
+  }
+}
