@@ -4,7 +4,9 @@ Commands
     open / close      std_srvs/Trigger services `gripper.services.open|close`
     set_width, close(force)
                       GripperGuardedMove action `gripper.action.guarded_move`
-                      (mode "width" without a force, "guarded" with one)
+                      (mode "width" without a force, "torque" with one: the
+                      controller (rg2_controller.py _run_guarded_move) knows
+                      only these two; "torque" closes until the force threshold)
 Readings (declared in `gripper.readings`)
     width             Float64 on `topics.gripper_width_true`  -> ground_truth
     effort            `joints.gripper_effort` effort on joint_states -> joint_state
@@ -107,10 +109,10 @@ class SimRG2Gripper(GripperBackend):
     def close(self, force: float | None = None, timeout_s: float | None = None) -> GripperResult:
         if force is None:
             return self._trigger(self._close_client, "close", timeout_s)
-        return self._guarded_move(0.0, force, "guarded", timeout_s)
+        return self._guarded_move(0.0, force, "torque", timeout_s)
 
     def set_width(self, width_m: float, force: float | None = None, timeout_s: float | None = None) -> GripperResult:
-        mode = "width" if force is None else "guarded"
+        mode = "width" if force is None else "torque"
         return self._guarded_move(float(width_m), force, mode, timeout_s)
 
     def _trigger(self, client: Any, label: str, timeout_s: float | None) -> GripperResult:

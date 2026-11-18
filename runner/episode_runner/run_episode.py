@@ -129,10 +129,19 @@ class RunnerNode:
                 getattr(self.backends, name).shutdown()
             except Exception:
                 pass
+        # Stop spinning and join the thread before the context goes away, or the
+        # executor thread aborts the process ("terminate called without an active exception").
         try:
-            self.executor.shutdown(timeout_sec=1.0)
+            self.executor.shutdown(timeout_sec=2.0)
+        except Exception:
+            pass
+        self._thread.join(timeout=3.0)
+        try:
             self.node.destroy_node()
-            rclpy.shutdown()
+        except Exception:
+            pass
+        try:
+            rclpy.try_shutdown()
         except Exception:
             pass
 
@@ -317,7 +326,10 @@ def main(argv: list[str] | None = None) -> int:
     rn = RunnerNode(platform, cell)
     rec = wd_proc = None
     try:
-        time.sleep(1.0)  # let the clock and joint states arrive
+        # DDS discovery takes a few seconds before the first /clock arrives.
+        deadline = time.monotonic() + 20.0
+        while has_sim_clock and rn.sim_now() is None and time.monotonic() < deadline:
+            time.sleep(0.2)
         health = rn.backends.scene.health()
         manifest["scene_health"] = {"ok": health.ok, "checks": health.checks}
         cs = (health.checks.get("command_server") or {}).get("response") or {}

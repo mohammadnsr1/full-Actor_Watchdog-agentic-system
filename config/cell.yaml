@@ -144,9 +144,12 @@ physical_events:
 
 # Milestone 6+. Left as a shape so later code has one place to read.
 budgets:
-  # TODO(mohammad): simulated-seconds budget per episode and the wall guard.
-  episode_sim_s: 0
-  episode_wall_guard_s: 0
+  # Testing values set 2026-11-17 (Mohammad: "whatever you want for testing"):
+  # about 4x the first full fmb_assembly_2 episode with the planner template
+  # (79 s sim, 212 s wall, headless-free GUI Isaac). Revisit once authored
+  # planners run (TODO(mohammad)).
+  episode_sim_s: 300
+  episode_wall_guard_s: 900
 
 health:
   # TODO(mohammad): staleness limits for the supervisor's checks.
