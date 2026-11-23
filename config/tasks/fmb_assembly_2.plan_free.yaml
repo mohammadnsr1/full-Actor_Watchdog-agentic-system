@@ -1,0 +1,58 @@
+# PLAN-FREE executor task for fmb_assembly_2: GENERATED, do not edit.
+# Derived from fmb_assembly_2.yaml by tools/derive_plan_free_task.py: keeps name, instruction_spec, object_ids, run_notes;
+# drops step_plan, steps; redacts 1 plan reference(s) in the kept text
+# (REDACT in the tool). Executor-only, like the full file.
+
+name: fmb_assembly_2
+instruction_spec: |
+  Assemble the FMB board: seat u_brown, u_orange, line_green and
+  inverted_u_yellow into their places on base1, in that order.
+
+  base1 is the fixture and is never picked. Its destinations are published
+  as TF frames, queried live rather than hardcoded:
+  u_brown_placement, u_orange_placement,
+  line_green_placement, inverted_u_yellow_placement.
+
+  Order matters. Each part you seat becomes an obstacle for the ones after it,
+  so do not reorder without reason.
+
+  Move to safe joint pose at the beginning of the task.
+
+  Preconditions:
+    - All four parts and base1 are present.
+
+  Effects (per part):
+    - The part's final pose matches its placement frame within the part's
+      registry position and orientation tolerances.
+    - The part was grasped securely on the way there: no slippage in hand;
+    - Previously seated parts are undisturbed: none has moved beyond its
+      registry position tolerance from its pre-step snapshot.
+
+  Invariants:
+    - Grasp clamp effort on each part never exceeds that part's registry
+      max_clamp_effort.
+    - The arm never drives a part into base1 or into an already-seated part
+      outside the intended seating contact.
+    - Only the parts involved in each step should be manipulated, and touched. the rest of the parts and objects should remain undisturbed. 
+
+  Working notes: none beyond the general rules in your standing instructions.
+object_ids: |
+  u_brown          — FMB U part, graspable. Seated first. Inserted directly.
+  inverted_u_yellow — FMB inverted-U part, graspable. Inserted directly.
+  u_orange         — FMB U part, graspable. Inserted directly.
+  line_green       — FMB line part, graspable. Inserted directly.
+  base1            — the fixture. NOT graspable and never picked; it carries
+                     the slots the four parts seat into.
+
+  Placement destinations are published as TF frames and queried like object
+  poses: u_brown_placement, inverted_u_yellow_placement, u_orange_placement,
+  line_green_placement. They are pose-only markers, not collision geometry, and
+  they move with the fixture -- which is why they are queried rather than
+  hardcoded. This task uses no reorient frames.
+
+  Registry acm_allowed_object_pairs covers every pair among u_brown, base1,
+  u_orange, line_green and inverted_u_yellow -- a planner collision-checking
+  setting, not a statement of task permission; see the effect clauses for what
+  makes their contact conformant. It does NOT cover the gripper against those
+  parts, and it does not cover the occupancy map at all.
+run_notes: ''

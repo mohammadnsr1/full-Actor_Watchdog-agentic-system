@@ -1,7 +1,7 @@
 """Planner template: a stdio MCP server with exactly one tool, execute_task.
 
-Started by run.sh. stdout is the MCP channel: logging goes to stderr and to
-$CELL_EPISODE_DIR/executor/planner.log. See docs/PLANNER_CONTRACT.md.
+Started by run.sh. stdout is the MCP channel: logging goes to
+$CELL_EPISODE_DIR/executor/planner.jsonl (stderr outside an episode). See docs/PLANNER_CONTRACT.md.
 """
 
 from __future__ import annotations
@@ -14,7 +14,9 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
+# Not resolved: in a template directory server.py is a symlink to ../common, and
+# planner.py must be imported from the planner's own directory.
+HERE = Path(os.path.abspath(__file__)).parent
 
 
 def _append_system_dist_packages() -> None:
@@ -26,14 +28,33 @@ def _append_system_dist_packages() -> None:
             site.addsitedir(candidate)
 
 
+class _JsonLines(logging.Formatter):
+    """One JSON object per record: wall_time_iso, level, logger, msg (+ exc)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json
+        from datetime import datetime, timezone
+
+        out = {"wall_time_iso": datetime.fromtimestamp(record.created, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+               "level": record.levelname, "logger": record.name, "msg": record.getMessage()}
+        if record.exc_info:
+            out["exc"] = self.formatException(record.exc_info)
+        return json.dumps(out, default=str)
+
+
 def _setup_logging() -> None:
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
+    """In an episode: $CELL_EPISODE_DIR/executor/planner.jsonl (the runner keeps
+    the process's raw stderr separately). Outside one: plain stderr."""
     episode = os.environ.get("CELL_EPISODE_DIR")
     if episode:
         out = Path(episode) / "executor"
         out.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(out / "planner.log"))
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
+        handler: logging.Handler = logging.FileHandler(out / "planner.jsonl")
+        handler.setFormatter(_JsonLines())
+    else:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 _append_system_dist_packages()

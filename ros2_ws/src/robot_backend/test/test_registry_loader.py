@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import importlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -402,9 +401,7 @@ def test_pre_refactor_collision_bytes_and_manifest_hash_are_identical(tmp_path: 
     assert manifest["registry_sha256"] == model.raw_sha256
 
 
-def test_contract_and_gripper_consumers_receive_unchanged_spec_slices(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_contract_consumer_receives_unchanged_spec_slices() -> None:
     raw = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
     contract_registry = load_contract_registry(REGISTRY_PATH)
     checked = 0
@@ -416,20 +413,3 @@ def test_contract_and_gripper_consumers_receive_unchanged_spec_slices(
         assert contract_registry["objects"][object_id]["spec"] == entry["spec"]
         checked += 1
     assert checked > 0
-
-    monkeypatch.setenv("_ROBOT_BACKEND_MCP_VENV_READY", "1")
-    packages = importlib.import_module("ament_index_python.packages")
-    monkeypatch.setattr(
-        packages, "get_package_share_directory", lambda package: str(PACKAGE_ROOT)
-    )
-    gripper_server = importlib.import_module(
-        "robot_backend.mcp_servers.gripper_mcp_server"
-    )
-    gripper_registry = gripper_server._load_registry()
-    checked_gripper = 0
-    for object_id, entry in raw["objects"].items():
-        if "spec" not in entry:
-            continue  # pose-only frame entries carry no spec by design
-        assert gripper_registry["objects"][object_id]["spec"] == entry["spec"]
-        checked_gripper += 1
-    assert checked_gripper > 0

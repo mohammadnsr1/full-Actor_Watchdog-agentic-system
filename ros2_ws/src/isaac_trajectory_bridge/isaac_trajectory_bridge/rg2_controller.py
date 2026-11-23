@@ -149,10 +149,10 @@ DEFAULT_EFFORT_NOISE_FLOOR = 0.03
 DEFAULT_EFFORT_PLATEAU_GATE_FRAC = 1.0
 # The single effort stop threshold for torque-mode guarded_move is
 # goal.force_threshold — sourced per object from the registry spec
-# (spec.grasp.force_threshold_n, via robot_backend/skills/gripper_skills.py).
+# (spec.grasp.force_threshold_n; the planner's guarded grasp, as v1's gripper_skills.py did).
 # DEFAULT_HARD_FORCE_THRESHOLD is only the fallback used when a goal omits
 # force_threshold (goal.force_threshold <= 0.0); it is not a second,
-# independent stop condition. robot_backend/skills/gripper_skills.py's
+# independent stop condition. the caller's (v1: gripper_skills.py)
 # DEFAULT_FORCE_THRESHOLD mirrors this value for its own fallback.
 DEFAULT_HARD_FORCE_THRESHOLD = 0.5
 DEFAULT_EFFORT_PLATEAU_DERIV = 0.05

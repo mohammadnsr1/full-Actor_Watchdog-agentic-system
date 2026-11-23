@@ -58,7 +58,7 @@ from rclpy.node import Node
 
 REPO = Path(__file__).resolve().parents[1]
 
-# Copied from robot_backend/skills/gripper_skills.py (not importable outside the
+# Copied from v1's robot_backend/skills/gripper_skills.py (removed in Milestone 7; not importable outside the
 # robot_backend venv: it pulls pydantic). Keep in step with that file.
 GRASP_CLEARANCE_M = 0.005            # guarded target = grasp_width_m - this
 GRASP_MIN_PLAUSIBLE_WIDTH_M = 0.003  # at or below: closed on air / part lost
@@ -216,7 +216,7 @@ class Cell:
         self.execute(self.straight(pose) if straight else self.plan_to(pose), label)
 
     def grasp(self, grasp_width_m: float, force_threshold: float) -> Any:
-        """The executor's grasp (robot_backend/skills/gripper_skills.py grasp_skill):
+        """The executor's grasp (v1 robot_backend/skills/gripper_skills.py grasp_skill, now executor/planner_templates/common/geometry.py):
         GripperGuardedMove, target width grasp_width_m - GRASP_CLEARANCE_M, the part's
         force_threshold_n, mode 'torque', no width-tolerance override."""
         goal = self.Guarded.Goal()

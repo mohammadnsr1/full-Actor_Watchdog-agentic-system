@@ -6,13 +6,20 @@
     read_verdict(episode_id)           the feedback for one of this session's episodes
     submit_work(state, report)         end the session with the final planner
 
-One authoring session = one directory under executor/workspace/<session>/
-(AUTHORING_SESSION_DIR, created by runner/run_authoring.sh):
+One authoring session (created by runner/run_authoring.sh) has two directories:
 
-    planner/            the editable planner (a copy of executor/planner_template)
-    snapshots/NNN/      frozen copy evaluated by evaluate_planner call NNN
-    evals/              runner logs per episode
-    session.json        every call, every episode, the submission
+    executor/workspace/<condition>/<session>/   AUTHORING_SESSION_DIR, the agent's
+        planner/            the editable planner (a copy of the condition's template)
+        snapshots/NNN/      frozen copy evaluated by evaluate_planner call NNN
+    records/authoring/<session>/                AUTHORING_RECORD_DIR, never the agent's
+        agent_config.json   run parameters
+        session.json        every call, every episode, the submission
+        evals.jsonl         one record per episode run: id, snapshot, runner
+                            exit, wall time, outcome (the runner's own events
+                            are in records/<episode>/runner.jsonl)
+
+AUTHORING_CONDITION is the study condition: plan_given (the full task file)
+or plan_free (goal, constraints and object descriptions only).
 
 What the agent learns about an episode is filtered by config/cell.yaml
 `executor_feedback` (feedback.py). Episodes run through
@@ -45,8 +52,28 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from feedback import MODES, filter_verdict, needs_watchdog  # noqa: E402
 from runner.episode_runner.manifest import tree_hash  # noqa: E402
+from runner.jsonl import JsonlLog, read_jsonl  # noqa: E402
 
 MAX_EPISODES_PER_CALL = 3
+CONDITIONS = ("plan_given", "plan_free")
+
+HOW_TO = {
+    "plan_given": (
+        "The task file lists the steps to execute (sequence, grasp and insertion geometry). Edit the planner in "
+        "editable_planner_dir (it starts as a copy of executor/planner_templates/plan_given, which executes those "
+        "steps; run.sh, server.py, planner.py, worker.py, task.py, geometry.py). Executor-side data you may read: "
+        "config/tasks/, config/parts/executor_parts.yaml, config/platforms/, the cell_platform_interfaces and "
+        "cell_backend_* sources."
+    ),
+    "plan_free": (
+        "The task file gives the goal, the constraints and the objects, not a plan: deciding the sequence, the "
+        "grasps, the approach and insertion motions is your job. Edit the planner in editable_planner_dir (it starts "
+        "as executor/planner_templates/plan_free, a skeleton that passes the gate, moves to the safe pose and stops; "
+        "planner.py lists the primitives in worker.py and geometry.py). Executor-side data you may read: "
+        "config/parts/executor_parts.yaml (collision shape, dimensions and grasp force per part), config/platforms/, "
+        "the cell_platform_interfaces and cell_backend_* sources, robot_backend.utils (geometry, rg2_geometry)."
+    ),
+}
 
 mcp = FastMCP("executor-authoring")
 
@@ -72,16 +99,22 @@ class Session:
         if not d:
             raise RuntimeError("AUTHORING_SESSION_DIR is not set (start the session with runner/run_authoring.sh)")
         self.dir = Path(d).resolve()
+        self.records = Path(os.environ.get("AUTHORING_RECORD_DIR") or REPO / "records" / "authoring" / self.dir.name).resolve()
+        self.records.mkdir(parents=True, exist_ok=True)
+        self.condition = os.environ.get("AUTHORING_CONDITION", "plan_given")
+        if self.condition not in CONDITIONS:
+            raise RuntimeError(f"AUTHORING_CONDITION must be one of {CONDITIONS}, not {self.condition!r}")
         self.planner = self.dir / "planner"
         self.task = Path(os.environ.get("AUTHORING_TASK", "config/tasks/fmb_assembly_2.yaml"))
         self.task = self.task if self.task.is_absolute() else REPO / self.task
         self.assembly = os.environ.get("AUTHORING_ASSEMBLY", "fmb_assembly_2")
         self.platform = os.environ.get("CELL_PLATFORM", "sim")
-        self.state_path = self.dir / "session.json"
+        self.state_path = self.records / "session.json"
         if not self.planner.is_dir():
             raise RuntimeError(f"{self.planner} missing: run_authoring.sh copies the template there")
         self.state = json.loads(self.state_path.read_text()) if self.state_path.is_file() else {
             "session": self.dir.name, "started_wall_time_iso": _utc(), "task": str(self.task), "platform": self.platform,
+            "condition": self.condition,
             "evaluations": [], "submitted": None}
 
     def save(self) -> None:
@@ -111,14 +144,12 @@ def get_task() -> dict[str, Any]:
         "task": s.task.read_text(),
         "planner_contract": (REPO / "docs" / "PLANNER_CONTRACT.md").read_text(),
         "editable_planner_dir": str(s.planner),
-        "how_to": (
-            "Edit the planner in editable_planner_dir (it starts as a copy of executor/planner_template; "
-            "run.sh, server.py, planner.py, worker.py, task.py). evaluate_planner freezes a snapshot of that "
-            "directory and runs fresh episodes with it on the cell; read the returned feedback (or read_verdict) "
-            "and iterate. Executor-side data you may read: config/tasks/, config/parts/executor_parts.yaml, "
-            "config/platforms/, the cell_platform_interfaces and cell_backend_* sources. When the planner is "
-            "as good as you can make it, call submit_work."
+        "how_to": HOW_TO[s.condition] + (
+            " evaluate_planner freezes a snapshot of that directory and runs fresh episodes with it on the cell; "
+            "read the returned feedback (or read_verdict) and iterate. When the planner is as good as you can make "
+            "it, call submit_work."
         ),
+        "condition": s.condition,
         "feedback_mode": _feedback_mode(),
         "budgets": _cell().get("budgets"),
         "platform": s.platform,
@@ -128,19 +159,23 @@ def get_task() -> dict[str, Any]:
 
 
 def _run_episode(s: Session, snapshot: Path, episode_id: str, seed: int, watchdog: str) -> dict[str, Any]:
-    log_path = s.dir / "evals" / f"{episode_id}.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [str(REPO / "runner" / "episode_runner" / "run.sh"), "--planner", str(snapshot), "--task", str(s.task),
            "--assembly", s.assembly, "--seed", str(seed), "--platform", s.platform, "--episode-id", episode_id,
            "--watchdog", watchdog]
     env = {k: v for k, v in os.environ.items() if not k.startswith(("AUTHORING_", "VIRTUAL_ENV"))}
     started = time.monotonic()
-    with log_path.open("w") as log:
-        rc = subprocess.run(cmd, cwd=str(REPO), env=env, stdout=log, stderr=subprocess.STDOUT).returncode
+    proc = subprocess.run(cmd, cwd=str(REPO), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    rc = proc.returncode
     verdict_path = REPO / "records" / episode_id / "verdict.json"
     verdict = json.loads(verdict_path.read_text()) if verdict_path.is_file() else {
-        "episode_id": episode_id, "outcome": "invalid", "stage": "runner", "reason": f"runner exited {rc} without a verdict (see its log)"}
-    return {"episode_id": episode_id, "runner_exit": rc, "wall_s": round(time.monotonic() - started, 1), "verdict": verdict}
+        "episode_id": episode_id, "outcome": "invalid", "stage": "runner", "reason": f"runner exited {rc} without a verdict"}
+    entry = {"episode_id": episode_id, "snapshot": str(snapshot), "seed": seed, "watchdog": watchdog, "runner_exit": rc,
+             "wall_s": round(time.monotonic() - started, 1), "outcome": verdict.get("outcome"), "stage": verdict.get("stage"),
+             "record_dir": str(verdict_path.parent)}
+    if not verdict_path.is_file():
+        entry["runner_output_tail"] = proc.stdout.splitlines()[-80:]
+    JsonlLog(s.records / "evals.jsonl").write("episode", **entry)
+    return {"episode_id": episode_id, "runner_exit": rc, "wall_s": entry["wall_s"], "verdict": verdict}
 
 
 @mcp.tool()
@@ -192,9 +227,9 @@ def read_verdict(episode_id: str) -> dict[str, Any]:
     if not verdict_path.is_file():
         return {"error": "no verdict recorded for this episode"}
     out = filter_verdict(json.loads(verdict_path.read_text()), _feedback_mode())
-    log = ep / "executor" / "planner.log"
-    if log.is_file():
-        out["planner_log_tail"] = log.read_text(errors="replace").splitlines()[-60:]
+    tail = read_jsonl(ep / "executor" / "planner.jsonl", tail=60)
+    if tail:
+        out["planner_log_tail"] = tail
     return out
 
 

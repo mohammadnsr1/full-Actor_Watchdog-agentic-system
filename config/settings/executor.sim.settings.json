@@ -1,5 +1,5 @@
 {
-  "_comment": "EXECUTOR AUTHORING session permissions (Milestone 7), the executor-side mirror of watchdog.settings.json. The agent edits its own planner (AUTHORING_SESSION_DIR/planner, under executor/workspace/) and evaluates it through the executor-authoring MCP server; it needs no shell. Read is allowed for the executor-side repo (task file, executor parts, platform config, backend sources) and DENIED for everything WatchDog-side and for the episode records: records/ holds the ground-truth checker result and the WatchDog transcript, which reach the agent only through read_verdict, filtered by config/cell.yaml executor_feedback. Bash is denied because a shell bypasses every rule here (it could cat records/ or run the runner directly). Agent, Task and Workflow are denied because subagents read under their own permissions; Artifact, ShareOnboardingGuide, WebFetch and WebSearch are outbound channels. Edits are allowed only under executor/workspace/. Re-verify the tool list after a Claude Code upgrade: a tool added later is permitted by default.",
+  "_comment": "EXECUTOR AUTHORING session permissions (Milestone 7), the executor-side mirror of watchdog.settings.json. The agent edits its own planner (AUTHORING_SESSION_DIR/planner, under executor/workspace/<condition>/) and evaluates it through the executor-authoring MCP server; it needs no shell. The session's own bookkeeping (session.json, runner logs per episode) is written under records/authoring/, which is denied, because it carries the checker outcome. Read is allowed for the executor-side repo (task file, executor parts, platform config, backend sources) and DENIED for everything WatchDog-side and for the episode records: records/ holds the ground-truth checker result and the WatchDog transcript, which reach the agent only through read_verdict, filtered by config/cell.yaml executor_feedback. Bash is denied because a shell bypasses every rule here (it could cat records/ or run the runner directly). Agent, Task and Workflow are denied because subagents read under their own permissions; Artifact, ShareOnboardingGuide, WebFetch and WebSearch are outbound channels. Edits are allowed only under executor/workspace/. Re-verify the tool list after a Claude Code upgrade: a tool added later is permitted by default.",
   "_run_params_comment": "RUN PARAMETERS: model and effortLevel, as in watchdog.settings.json. runner/run_authoring.sh passes this file with --settings and echoes both values.",
   "model": "claude-sonnet-5",
   "effortLevel": "medium",
@@ -32,8 +32,8 @@
       "Glob(./records/**)",
       "Edit(./config/**)",
       "Write(./config/**)",
-      "Edit(./executor/planner_template/**)",
-      "Write(./executor/planner_template/**)",
+      "Edit(./executor/planner_templates/**)",
+      "Write(./executor/planner_templates/**)",
       "Bash",
       "Task",
       "Agent",
@@ -53,5 +53,6 @@
       "ReadMcpResourceTool",
       "ReadMcpResourceDirTool"
     ]
-  }
+  },
+  "_condition_comment": "CONDITION plan_given (runner/run_authoring.sh --condition plan_given): the agent gets the full task file, steps included, and starts from executor/planner_templates/plan_given. The plan_free settings are these rules plus extra read denies; executor/authoring_mcp/test_settings.py checks that."
 }

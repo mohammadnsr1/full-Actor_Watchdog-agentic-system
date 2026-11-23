@@ -1,4 +1,4 @@
-"""The planner template's logic: execute the task file's steps in order.
+"""Plan-given planner template: execute the task file's steps in order.
 
     safe pose -> for each step: pick | place_approach | place -> claim_done
 

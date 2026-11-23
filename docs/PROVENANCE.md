@@ -49,8 +49,8 @@ DROIDSTACK (`/home/mohammad/droidstack`, branch `dev`, commit `17192dbca327771cb
 
 | Idea | Where it appears in this repo | Milestone |
 |---|---|---|
-| A planner is a stdio MCP server exposing exactly one tool, `execute_task(task_ref) -> {state: done or stopped, reason}`, called once per episode by a harness that is the MCP client. | `docs/PLANNER_CONTRACT.md`, `executor/planner_template/`, `runner/episode_runner/` | M6 |
-| A structured "robot facts" journal published by the executor side (arm goal accepted, grip close/open, hold, carry, release) as untrusted hints for scoring. | `/cell/executor_facts` in `cell_planner_msgs`, `executor/planner_template/` | M6 |
+| A planner is a stdio MCP server exposing exactly one tool, `execute_task(task_ref) -> {state: done or stopped, reason}`, called once per episode by a harness that is the MCP client. | `docs/PLANNER_CONTRACT.md`, `executor/planner_templates/`, `runner/episode_runner/` | M6 |
+| A structured "robot facts" journal published by the executor side (arm goal accepted, grip close/open, hold, carry, release) as untrusted hints for scoring. | `/cell/executor_facts` in `cell_planner_msgs`, `executor/planner_templates/` | M6 |
 | An authoring loop: freeze a snapshot of the editable planner, run a fresh episode, hand the agent the verdict paths, repeat; `submit_work` ends the session. | `executor/authoring_mcp/` | M6 |
 | A loopback TCP newline-JSON command server running inside Kit, one request per connection, for layout reset, pose report, timeline control and health. | `isaac/cell_command_server/` | M5 |
 | Headless Kit launch owned by the harness, with the ROS 2 bridge enabled by script. | `isaac/headless/` | M5 |
@@ -652,3 +652,35 @@ Edited: `config/platforms/sim.yaml` (`scene` block: port 9010 as an arbitrary lo
 ### Removed tests (they tested the removed executor coupling)
 
 `test_executor_terminal_status_source.py`, `test_final_run_verdict_cadence.py`, `test_run_ended_terminal_event.py`, `test_watchdog_forced_termination.py`, `test_watchdog_run_verdict.py`, `test_watchdog_release_lifecycle.py`, `test_tf_time_alignment.py`. Their surviving concerns (held span, release auto-disarm, per-part rollup, backstop finalize, TCP/object alignment) are covered by `test_plan_blind_watchdog.py`.
+
+## Milestone 7 addendum, 2026-11-17 to 2026-11-23: planner contract, episode runner, authoring, prune
+
+No files copied from WATCHDOG or DROIDSTACK. The DROIDSTACK ideas credited above (one-tool planner, facts journal, authoring loop with frozen snapshots, sim budget plus wall guard, hashed manifest) are implemented from scratch.
+
+### New files (written from scratch)
+
+`docs/PLANNER_CONTRACT.md`, `docs/ARCHITECTURE.md`; `executor/planner_templates/common/{run.sh, server.py, worker.py, geometry.py}`, `plan_given/{planner.py, task.py, test_task.py}`, `plan_free/planner.py`; `executor/authoring_mcp/{server.py, feedback.py, test_feedback.py, test_settings.py}`; `runner/episode_runner/{run_episode.py, run.sh, checker.py, manifest.py, test_checker.py}`; `runner/run_authoring.sh`; `runner/jsonl.py`, `runner/test_jsonl.py`; `tools/derive_plan_free_task.py`, `tools/test_derive_plan_free_task.py`; `config/settings/executor.{sim,hardware}[.plan_free].settings.json`; `config/mcp/executor.{sim,hardware}.mcp.json`; `config/tasks/fmb_assembly_2.plan_free.yaml` (generated).
+
+Values carried over: the grasp rule (close to width − 5 mm under the part's `force_threshold_n`; 3 mm means empty) from v1 `skills/gripper_skills.py`; the grasp-centre and TCP geometry from `robot_backend/utils/{geometry,rg2_geometry}.py` (kept, imported).
+
+Moved: `agents/tasks/fmb_assembly_2.executor.yaml` → `config/tasks/fmb_assembly_2.yaml` (Mohammad's instruction file, unchanged).
+
+### Removed in Milestone 7 (all recoverable from git history)
+
+Method: an import closure (Python `ast`, lazy imports included) from everything kept (the WatchDog server, `scene_tf_sync_node`, `agents/`, `executor/`, `runner/`, `tools/`, `isaac/`, the `cell_*` packages); a text search for every other reference; `UsdUtils.ComputeAllDependencies` on `assets/usd/assembly_room.usd` for assets.
+
+| Removed | Why |
+|---|---|
+| `robot_backend/robot_backend/{ros_moveit_backend, interfaces, manual_tests, cell}/`, `mcp_servers/{motion,gripper,scene,executor_monitor}_mcp_server.py`, `skills/{motion,gripper,maintenance}_skills.py` | The v1 executor stack (BUILD_PLAN 1.1 prune list); unreachable from anything kept. Replaced by the planner over `cell_platform_interfaces` and `cell_planning_service`. Console scripts removed from `setup.py`. |
+| `robot_backend/test/`: executor plan YAMLs, `executor_task_to_plan.py`, `verify_plan_matches_task.py`, `plan_assembly_step.py`, `pick_place_stress_test.py`, `grasp_effort_test.py`, `log_grasp_effort.py`, `rg2_effort_sweep.py`, `rg2_gripper_stiffness_sweep.py`, `watchdog_rung2_*`, `watchdog_rung3_halt_on_fire_test.py`, `watchdog_smoke_test.py`, `test_grasp_skill*.py`, `test_maintenance_skills.py`, `test_skill_event_coverage.py`, `test_camera_streams_live.py` | Drove or tested the removed executor modules. |
+| `robot_backend/test/{test_rendered_surface, test_prompt_variants, test_scorers, test_audit_intruder_leak, test_inject_intruder, test_inject_scenarios}.py` | Tested v1 code never copied (S1/S2/S4 prompts, scorers, intruder injection); failing or not importable before the prune. |
+| `test_motion_geometry.py` → `test_grasp_center_geometry.py` | Pure-geometry tests kept; the motion-server block dropped. `test_registry_loader.py`: the gripper-server slice dropped. |
+| `agents/agent_harness/{runner,providers,mcp_client,transcript,timebase}.py` | The v1 API agent loop; sessions run through the Claude CLI. `config.py` and `task_render.py` stay (the WatchDog server renders its task with them). |
+| `agents/config/watchdog_agent_s3.yaml`, `agents/prompts/{watchdog_system_s3,watchdog_task}.txt`, `agents/tasks/fmb_assembly_2.watchdog.yaml`, `config/mcp/watchdog.mcp.json` | The S3 session, kept only for the Milestone 2 liveness check; it read a step-bearing task file. `watchdog.hardware.mcp.json` now points at the plan-blind config and the requirements file; `run_watchdog.sh` accepts `plan_blind` only. |
+| `config/robot/{ur5e.urdf, ur5e.yaml, ur5e_rmpflow_common_v2.yaml}` | Isaac Lula/RMPflow configs and a URDF nothing reads. `ur5e.xrdf` and `rg2_collision_spheres.yaml` stay (cuRobo). |
+| `assets/ur_assets/` (72 MB), `assets/usd/{Collected_workspace/, RG2.usd, RG2_Good.usd}`, `assets/usd/Collected_fmb_assemblies/{Collected_fmb1_prepared/, Collected_fmb3/}`, the five unscaled `Collected_fmb2/*.usd` | Not referenced by the stage or by any file. |
+| `generated_urdf/rg2_only/rg2_only/`, `rg2_only_isaac.old_custom_backup.urdf` | Not referenced; `rg2_only_isaac/` (used by the stage) and the two URDFs it came from stay. |
+
+### Edited
+
+`robot_backend/{__init__.py, skills/__init__.py, mcp_servers/__init__.py}` (docstrings), `robot_backend/setup.py`, `runner/run_watchdog.sh`, `config/mcp/watchdog.hardware.mcp.json`, `runner/recorder/episode_recording.py` (stderr as JSONL), comments that pointed at removed files (`utils/geometry.py`, `tools/pick_check.py`, `cell_orchestrator`, `rg2_controller.py`, `config/requirements/fmb_assembly_2.yaml`), `docs/PLATFORMS.md`.

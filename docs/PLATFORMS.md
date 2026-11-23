@@ -13,7 +13,7 @@ distro per graph.
 | camera1 (wrist) pose pipeline | none yet (camera1 disabled in `config/cameras/sim.yaml`) | FoundationPose on the Orin (not built yet), `/camera1/poses` |
 | camera2 (table) pose pipeline | `cell_backend_sim ground_truth_pose_publisher` (Isaac TF to `/camera2/poses`) | FoundationPose on the workstation (not built yet), `/camera2/poses` |
 | Planning service | Jazzy native, MoveIt backend default | accelerator's own planner first (UR AI Accelerator SDK), cuRobo node second, MoveIt backup; placement `TODO(mohammad)` |
-| WatchDog MCP server | Jazzy native, `config/mcp/watchdog.mcp.json` | Humble container on the workstation, `config/mcp/watchdog.hardware.mcp.json` |
+| WatchDog MCP server | Jazzy native, `config/mcp/watchdog.plan_blind.mcp.json` | Humble container on the workstation, `config/mcp/watchdog.hardware.mcp.json` |
 | Physical events (M5), recorder, episode runner (M7) | Jazzy native | container or accelerator, decided in M7 (Mohammad's answer 7) |
 
 Mohammad's answer 7 (2026-11-10): the Humble container holds WatchDog and the

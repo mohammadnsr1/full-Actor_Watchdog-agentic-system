@@ -2,7 +2,7 @@
 
 Run with the workspace sourced (robot_backend.utils):
     source ros2_ws/install/setup.bash
-    python3 -m pytest -q executor/planner_template
+    python3 -m pytest -q executor/planner_templates/plan_given
 """
 
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = next(p for p in HERE.parents if (p / "config" / "cell.yaml").is_file())
 sys.path.insert(0, str(HERE))
 
 import task as T  # noqa: E402

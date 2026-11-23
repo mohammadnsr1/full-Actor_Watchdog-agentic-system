@@ -31,6 +31,10 @@ from pathlib import Path
 from typing import Any
 
 from cell_platform_interfaces.compat import bag_record_command
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from runner.jsonl import StderrPump  # noqa: E402
 from cell_platform_interfaces.platform_config import PlatformConfig
 
 FRAME_RECORDER = Path(__file__).resolve().parent / "frame_recorder.py"
@@ -74,6 +78,7 @@ class EpisodeRecording:
         self.video_enabled = bool(((cell_config.get("recording") or {}).get("video") or {}).get("enabled", False))
         self._bag: subprocess.Popen | None = None
         self._frames: subprocess.Popen | None = None
+        self._pumps: list[StderrPump] = []
         self.started_wall_time_iso: str | None = None
         self.stopped_wall_time_iso: str | None = None
 
@@ -95,9 +100,15 @@ class EpisodeRecording:
         self.dir.mkdir(parents=True, exist_ok=True)
         if not self.topics:
             raise RuntimeError("no bag topics resolved; check config/cell.yaml recording.bag and the platform topics")
-        self._bag = subprocess.Popen(self.bag_command(), env=self.env, stdout=subprocess.DEVNULL, stderr=open(self.dir / "bag.stderr.log", "ab"))
+        bag_err = StderrPump(self.dir / "bag.stderr.jsonl", "bag")
+        self._bag = subprocess.Popen(self.bag_command(), env=self.env, stdout=subprocess.DEVNULL, stderr=bag_err.fileno())
+        bag_err.started()
+        self._pumps.append(bag_err)
         if self.frames_enabled:
-            self._frames = subprocess.Popen(self.frames_command(), env=self.env, stdout=subprocess.DEVNULL, stderr=open(self.dir / "frames.stderr.log", "ab"))
+            frames_err = StderrPump(self.dir / "frames.stderr.jsonl", "frames")
+            self._frames = subprocess.Popen(self.frames_command(), env=self.env, stdout=subprocess.DEVNULL, stderr=frames_err.fileno())
+            frames_err.started()
+            self._pumps.append(frames_err)
         self.started_wall_time_iso = _iso()
         self._write_manifest(status="recording")
         return self
@@ -118,6 +129,9 @@ class EpisodeRecording:
                 time.sleep(0.1)
             if proc.poll() is None:
                 proc.kill()
+        for pump in self._pumps:
+            pump.close()
+        self._pumps = []
         self.stopped_wall_time_iso = _iso()
         video = self._encode_video() if self.video_enabled else None
         return self._write_manifest(status="stopped", video=video)

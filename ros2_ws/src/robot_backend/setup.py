@@ -57,13 +57,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "gripper_mcp_server = robot_backend.mcp_servers.gripper_mcp_server:main",
-            "motion_mcp_server = robot_backend.mcp_servers.motion_mcp_server:main",
             "scene_tf_sync_node = robot_backend.nodes.scene_tf_sync_node:main",
-            "scene_backend_smoke_test = robot_backend.manual_tests.scene_backend_smoke_test:main",
-            "scene_mcp_server = robot_backend.mcp_servers.scene_mcp_server:main",
             "watchdog_mcp_server = robot_backend.mcp_servers.watchdog_mcp_server:main",
-            "executor_monitor_mcp_server = robot_backend.mcp_servers.executor_monitor_mcp_server:main",
         ],
     },
 )

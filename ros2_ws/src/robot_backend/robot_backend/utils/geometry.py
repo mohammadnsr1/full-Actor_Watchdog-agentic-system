@@ -91,8 +91,8 @@ def grasp_center_from_object_and_offset(
     independently here, so nothing checks that the named point is reachable
     at the requested orientation. Dry-run the geometry first.
 
-    Single source of truth for this convention -- motion_mcp_server and
-    test/plan_assembly_step.py both call this, having previously each
+    Single source of truth for this convention -- the planner templates and
+    tools/pick_check.py call this (as v1's motion_mcp_server did), having previously each
     implemented it (differently, and divergently).
     """
 

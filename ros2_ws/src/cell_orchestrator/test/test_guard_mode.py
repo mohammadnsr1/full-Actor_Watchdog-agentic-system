@@ -35,7 +35,7 @@ def _make_node(tmp_path, guard_mode: str | None = None) -> OrchestratorNode:
     # design -- see the module docstring's note on why guard_mode is read
     # live but this is not). Tests therefore always pass an explicit
     # request.timeout_sec instead of relying on the node's default, exactly
-    # as the real caller (robot_backend.cell.gate.request_go) always does.
+    # as the real caller (the planner's Worker.gate) always does.
     node = OrchestratorNode(log_dir=tmp_path)
     if guard_mode is not None:
         node.set_parameters([rclpy.parameter.Parameter("guard_mode", value=guard_mode)])

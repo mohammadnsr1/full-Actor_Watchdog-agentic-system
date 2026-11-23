@@ -2,16 +2,21 @@
 episode_end, acceptance wait, ground-truth check, manifest.json, verdict.json.
 
     runner/episode_runner/run.sh --budget-sim-s 900 --wall-guard-s 1800
-    runner/episode_runner/run.sh --planner executor/planner_template --seed 3 --watchdog plan_blind
+    runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --seed 3 --watchdog plan_blind
 
 Layout of records/<episode_id>/:
     manifest.json      every input hashed (task, requirements, parts, layout,
                        platform, cell config, planner tree), git state, versions
     verdict.json       planner completion, budget use, checker result,
                        WatchDog run verdict (when a session ran), outcome
-    bag/, frames/, recording.json     the episode recording (M6)
-    executor/          the planner's own directory (planner.log, stderr)
-    watchdog/          the WatchDog session directory and its transcript
+    runner.jsonl       the runner's own events (stage changes, planner result,
+                       outcome), one JSON object per line
+    bag/, frames/, recording.json     the episode recording (M6);
+                       bag.stderr.jsonl, frames.stderr.jsonl: the recorder
+                       processes' stderr, one line per record
+    executor/          the planner's own directory: planner.jsonl (its log),
+                       planner.stderr.jsonl (raw stderr of the planner process)
+    watchdog/          the WatchDog session directory and its transcript.jsonl
 
 Outcomes: success (planner done and checker pass), failure (anything else
 the planner did), invalid (the episode could not be judged: unhealthy cell,
@@ -43,14 +48,22 @@ if str(REPO) not in sys.path:
 
 from runner.episode_runner import checker  # noqa: E402
 from runner.episode_runner.manifest import file_record, git_state, tree_hash  # noqa: E402
+from runner.jsonl import JsonlLog, StderrPump, utc_iso  # noqa: E402
+
+_EVENTS: JsonlLog | None = None
 
 
-def utc_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-
-
-def log(msg: str) -> None:
+def log(msg: str, event: str = "log", **fields: Any) -> None:
+    """One line to the terminal; one JSON record to records/<episode>/runner.jsonl once it exists."""
     print(f"[episode] {msg}", file=sys.stderr, flush=True)
+    if _EVENTS is not None:
+        _EVENTS.write(event, msg=msg, **fields)
+
+
+def stage(verdict: dict[str, Any], name: str) -> None:
+    verdict["stage"] = name
+    if _EVENTS is not None:
+        _EVENTS.write("stage", stage=name)
 
 
 # -- ROS side ---------------------------------------------------------------------------
@@ -168,7 +181,7 @@ def _parse_result(res: Any) -> dict[str, Any]:
 
 
 async def call_planner(planner_dir: Path, task_ref: str, env: dict[str, str], wall_guard_s: float,
-                       sim_budget_s: float | None, rn: RunnerNode, errlog: Path) -> dict[str, Any]:
+                       sim_budget_s: float | None, rn: RunnerNode, errlog: Any) -> dict[str, Any]:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -179,38 +192,37 @@ async def call_planner(planner_dir: Path, task_ref: str, env: dict[str, str], wa
     params = StdioServerParameters(command=str(run_sh), args=[], env=env, cwd=str(REPO))
     t0, s0 = time.monotonic(), rn.sim_now()
     stop = None
-    with errlog.open("w") as err:
-        async with stdio_client(params, errlog=err) as (read, write):
-            async with ClientSession(read, write) as session:
-                await asyncio.wait_for(session.initialize(), 120)
-                tools = [t.name for t in (await asyncio.wait_for(session.list_tools(), 30)).tools]
-                out["tools"] = tools
-                if tools != ["execute_task"]:
-                    return {**out, "outcome": "protocol_error", "reason": f"planner must expose exactly execute_task, has {tools}"}
-                call = asyncio.ensure_future(session.call_tool("execute_task", {"task_ref": task_ref},
-                                                               read_timeout_seconds=timedelta(seconds=wall_guard_s + 120)))
-                while not call.done():
-                    await asyncio.wait({call}, timeout=0.5)
-                    if time.monotonic() - t0 > wall_guard_s:
-                        stop = "wall_guard"
-                    sim_now = rn.sim_now()
-                    if sim_budget_s and s0 is not None and sim_now is not None and sim_now - s0 > sim_budget_s:
-                        stop = "budget_exhausted"
-                    if stop:
-                        break
+    async with stdio_client(params, errlog=errlog) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), 120)
+            tools = [t.name for t in (await asyncio.wait_for(session.list_tools(), 30)).tools]
+            out["tools"] = tools
+            if tools != ["execute_task"]:
+                return {**out, "outcome": "protocol_error", "reason": f"planner must expose exactly execute_task, has {tools}"}
+            call = asyncio.ensure_future(session.call_tool("execute_task", {"task_ref": task_ref},
+                                                           read_timeout_seconds=timedelta(seconds=wall_guard_s + 120)))
+            while not call.done():
+                await asyncio.wait({call}, timeout=0.5)
+                if time.monotonic() - t0 > wall_guard_s:
+                    stop = "wall_guard"
+                sim_now = rn.sim_now()
+                if sim_budget_s and s0 is not None and sim_now is not None and sim_now - s0 > sim_budget_s:
+                    stop = "budget_exhausted"
                 if stop:
-                    cancel = rn.backends.motion.cancel_all()
-                    out["stop_cancel"] = {"ok": cancel.ok, "detail": cancel.detail}
-                    call.cancel()
-                    result = {"state": "stopped", "reason": f"runner stopped the call: {stop}"}
-                else:
-                    try:
-                        res = call.result()
-                        result = _parse_result(res)
-                        if getattr(res, "isError", False):
-                            result = {"state": "invalid", "reason": f"tool error: {result.get('reason') or res.content}"}
-                    except Exception as exc:  # noqa: BLE001
-                        result = {"state": "invalid", "reason": f"{type(exc).__name__}: {exc}"}
+                    break
+            if stop:
+                cancel = rn.backends.motion.cancel_all()
+                out["stop_cancel"] = {"ok": cancel.ok, "detail": cancel.detail}
+                call.cancel()
+                result = {"state": "stopped", "reason": f"runner stopped the call: {stop}"}
+            else:
+                try:
+                    res = call.result()
+                    result = _parse_result(res)
+                    if getattr(res, "isError", False):
+                        result = {"state": "invalid", "reason": f"tool error: {result.get('reason') or res.content}"}
+                except Exception as exc:  # noqa: BLE001
+                    result = {"state": "invalid", "reason": f"{type(exc).__name__}: {exc}"}
     s1 = rn.sim_now()
     out.update(result)
     out["outcome"] = stop or ("completed" if result.get("state") in ("done", "stopped") else "protocol_error")
@@ -242,7 +254,7 @@ def start_watchdog(kind: str, episode_dir: Path, env: dict[str, str]) -> subproc
     (wd_dir / "agent_config_watchdog.json").write_text(json.dumps(
         {"role": "watchdog", "scenario": kind, "model": model, "effort": effort, "launched_wall_time_iso": utc_iso(), "cmd": cmd[:1] + cmd[3:]}, indent=2))
     transcript = (wd_dir / "transcript.jsonl").open("w")
-    log(f"watchdog session {kind} (model={model} effort={effort})")
+    log(f"watchdog session {kind} (model={model} effort={effort})", event="watchdog_start", model=model, effort=effort)
     return subprocess.Popen(cmd, cwd=str(REPO), env=wd_env, stdout=transcript, stderr=subprocess.STDOUT, start_new_session=True)
 
 
@@ -265,7 +277,7 @@ def stop_process(proc: subprocess.Popen | None, grace_s: float) -> int | None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--task", default="config/tasks/fmb_assembly_2.yaml")
-    ap.add_argument("--planner", default="executor/planner_template")
+    ap.add_argument("--planner", default="executor/planner_templates/plan_given")
     ap.add_argument("--assembly", default="fmb_assembly_2")
     ap.add_argument("--layout", default="nominal")
     ap.add_argument("--seed", type=int, default=0)
@@ -316,7 +328,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"{ep} exists; pick another --episode-id")
     for sub in ("executor", "watchdog"):
         (ep / sub).mkdir(parents=True)
-    log(f"episode {episode_id} -> {ep}")
+    global _EVENTS
+    _EVENTS = JsonlLog(ep / "runner.jsonl")
+    log(f"episode {episode_id} -> {ep}", event="episode_start", episode_id=episode_id, planner=args.planner,
+        task=args.task, seed=args.seed, platform=args.platform, watchdog=args.watchdog)
 
     manifest: dict[str, Any] = {
         "episode_id": episode_id, "created_wall_time_iso": utc_iso(), "platform": args.platform,
@@ -349,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
             verdict.update(stage="health", reason="cell unhealthy or no sim clock")
             return 2
 
-        verdict["stage"] = "reset"
+        stage(verdict, "reset")
         reset = rn.backends.scene.load_layout(args.assembly, args.layout, args.seed, timeout_s=90)
         time.sleep(args.settle_s)
         verify = rn.backends.scene.verify_reset({})
@@ -367,15 +382,21 @@ def main(argv: list[str] | None = None) -> int:
         base_env.pop("VIRTUAL_ENV", None)
         wd_proc = start_watchdog(args.watchdog, ep, base_env)
 
-        verdict["stage"] = "planner"
+        stage(verdict, "planner")
         log(f"execute_task({task_path.relative_to(REPO)}) with planner {planner_dir} "
             f"(sim budget {sim_budget}s, wall guard {wall_guard}s)")
         planner_env = {k: v for k, v in base_env.items() if not k.startswith("WATCHDOG_")}
-        verdict["planner"] = asyncio.run(call_planner(planner_dir, str(task_path), planner_env, wall_guard,
-                                                      sim_budget if has_sim_clock else None, rn, ep / "executor" / "planner.stderr.log"))
-        log(f"planner: {verdict['planner'].get('state')} ({verdict['planner'].get('outcome')}) {verdict['planner'].get('reason', '')}")
+        pump = StderrPump(ep / "executor" / "planner.stderr.jsonl", "planner")
+        try:
+            verdict["planner"] = asyncio.run(call_planner(planner_dir, str(task_path), planner_env, wall_guard,
+                                                          sim_budget if has_sim_clock else None, rn, pump.file()))
+        finally:
+            pump.close()
+        p = verdict["planner"]
+        log(f"planner: {p.get('state')} ({p.get('outcome')}) {p.get('reason', '')}", event="planner_result",
+            **{k: p.get(k) for k in ("state", "outcome", "reason", "wall_s", "sim_s")})
 
-        verdict["stage"] = "episode_end"
+        stage(verdict, "episode_end")
         time.sleep(args.settle_s)
         rn.publish_episode_end(episode_id, f"planner {verdict['planner'].get('state')}")
         if wd_proc is not None:
@@ -386,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         verdict["watchdog"] = ({"ran": False} if wd_proc is None else
                                {"ran": True, "run_verdict": wv[-1] if wv else None, "run_verdicts_seen": len(wv)})
 
-        verdict["stage"] = "check"
+        stage(verdict, "check")
         after = rn.backends.scene.report_poses().data.get("poses") or {}
         verdict["checker"] = checker.check(requirements, wd_parts, before, after)
         p = verdict["planner"]
@@ -394,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
             verdict["outcome"] = "invalid"
         else:
             verdict["outcome"] = "success" if (p.get("state") == "done" and verdict["checker"]["pass"]) else "failure"
-        verdict["stage"] = "done"
+        stage(verdict, "done")
         return 0 if verdict["outcome"] == "success" else 1
     except KeyboardInterrupt:
         verdict.update(reason="interrupted")
@@ -416,7 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         (ep / "verdict.json").write_text(json.dumps(verdict, indent=2, default=str))
         c = verdict.get("checker") or {}
         log(f"outcome {verdict['outcome']}: planner {(verdict.get('planner') or {}).get('state')}, "
-            f"checker {c.get('parts_placed', '-')}/{c.get('parts_required', '-')} placed, pass={c.get('pass')}; {ep}")
+            f"checker {c.get('parts_placed', '-')}/{c.get('parts_required', '-')} placed, pass={c.get('pass')}; {ep}",
+            event="episode_end", outcome=verdict["outcome"], stage=verdict.get("stage"))
         rn.shutdown()
 
 

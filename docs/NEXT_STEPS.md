@@ -1,20 +1,102 @@
 # Next steps
 
-Updated 2026-11-11 at the end of Milestone 6 (v2): cell command server, headless Isaac, sim cameras, recording.
+Updated 2026-11-23 during Milestone 7 (v2), sim side. How everything
+connects: `docs/ARCHITECTURE.md`.
 
 ## State
 
-- M1 to M4: done and checked. M5: built; the plan-blind session ran on your side once the config bug was fixed; the physical-event thresholds are yours to set (you said later).
-- M6 (this milestone): committed in 80f2967; live checks on 2026-11-17 below. The 2026-11-17 fixes are **not committed**.
+- M1 to M6: done and checked (M6 live checks below).
+- M7 sim side: built and unit-tested here; the live checks below are next.
+  Nothing since your last commit is committed. Hardware side of M7 follows.
 
-## Live check status (2026-11-17)
+## What Milestone 7 added
+
+| Path | What |
+|---|---|
+| `docs/PLANNER_CONTRACT.md` | What a planner is (a stdio MCP server with one tool, `execute_task`), what the runner gives it, what it may touch, what it reports. |
+| `executor/planner_templates/` | `common/` (`run.sh`, MCP `server.py`, ROS `worker.py`, `geometry.py`), `plan_given/` (executes the task file's steps), `plan_free/` (skeleton: gate, safe pose, halt handling, no assembly logic). |
+| `config/tasks/fmb_assembly_2.yaml`, `.plan_free.yaml` | The executor task (moved from `agents/tasks/`), and its plan-free derivation (`tools/derive_plan_free_task.py`: drops `step_plan` and `steps`, redacts the step grasp-width clause). |
+| `runner/episode_runner/` | One episode: lock, health, reset + verify, recording, WatchDog session, `execute_task` under the sim budget and wall guard, `episode_end`, acceptance wait, ground-truth checker, `manifest.json`, `verdict.json`, `runner.jsonl`. |
+| `executor/authoring_mcp/` | `get_task`, `evaluate_planner`, `read_verdict`, `submit_work`; feedback filtered by `config/cell.yaml executor_feedback`. |
+| `runner/run_authoring.sh` | `[platform] [plan_given\|plan_free] [task]`: workspace under `executor/workspace/<condition>/`, bookkeeping under `records/authoring/<session>/`, condition-specific settings. |
+| `config/settings/executor.*.json`, `config/mcp/executor.*.json` | Authoring permissions per platform and condition (plan-free also denies every place the plan is written). |
+| `runner/jsonl.py` | JSON Lines for every log in `records/` (runner events, process stderr, planner log, authoring evals). |
+| Prune | The v1 executor stack, the S3 WatchDog session, unused assets and configs, and tests of v1 code that is not in this repo (list in `docs/PROVENANCE.md`, Milestone 7). |
+
+Checked here: planner templates, authoring MCP, derive tool, settings, JSONL,
+recorder, checker tests (30); `robot_backend` 350 passed after the prune
+(424 before: the difference is the deleted tests; the 40 failures and 5
+collection errors before the prune were all in deleted tests of v1 code
+never copied); both templates start and expose exactly `execute_task`; the
+WatchDog renders its plan-blind prompt and task; `get_task` in plan-free mode
+returns no steps.
+
+Episodes run before the prune and the JSONL change: `records/m7-first-s0-r3`
+(template, all 12 steps executed, 79 s sim; checker: only inverted_u_yellow
+placed, base1 moved 6.5 mm; the straight-line inserts of line_green and
+inverted_u_yellow disturbed the seated parts).
+
+## What you run to check Milestone 7 (sim)
+
+Cell up (Isaac playing with the command server, `sim_moveit_bringup`), from
+the repo root.
+
+1. **Baseline, plan given, no WatchDog** (no tokens):
+
+   ```bash
+   runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id m7-given-s0
+   ```
+
+   Expect `records/m7-given-s0/` with `manifest.json`, `verdict.json`,
+   `runner.jsonl`, `executor/planner.jsonl`, `bag/`, and no `.log` files.
+
+2. **Plan-free skeleton** (no tokens):
+
+   ```bash
+   runner/episode_runner/run.sh --planner executor/planner_templates/plan_free \
+     --task config/tasks/fmb_assembly_2.plan_free.yaml --episode-id m7-free-s0
+   ```
+
+   Expect the arm to go to the safe pose and the planner to return
+   `stopped: plan-free skeleton: no assembly logic written yet`, outcome
+   `failure`.
+
+3. **Authoring session, checker feedback** (authoring tokens only):
+
+   ```bash
+   AUTHORING_FEEDBACK=checker runner/run_authoring.sh sim plan_free
+   ```
+
+   First ask it to read `config/tasks/fmb_assembly_2.yaml` and
+   `executor/planner_templates/plan_given/planner.py`: both must be denied.
+   Then let it work. `records/authoring/<session>/evals.jsonl` gets one line
+   per episode.
+
+4. **WatchDog episode** (WatchDog tokens): step 1 with `--watchdog plan_blind`.
+
+### Open
+
+- cuRobo: `cell_planning_curobo` is written but not installed
+  (`planner.curobo.python` is `TODO(mohammad)`; separate venv per its
+  `INSTALL.md`). Every episode so far planned with MoveIt.
+- `executor/workspace/authoring-tooltest/` and its records predate the
+  condition layout; delete them when convenient.
+- Plan-free sessions can read other plan-free sessions' planners (a deny
+  would also cover their own); clear `executor/workspace/plan_free/` between
+  sessions that must be independent.
+- `worker.py` plans for the group `ur_manipulator` by literal; it should come
+  from the platform config before hardware.
+
+## Milestone 6 record
+
+### Milestone 6 live checks (2026-11-17)
 
 | Step | Status |
 |---|---|
 | 1 command server (GUI) | PASS. Use `nc -N` (Ubuntu's nc quits before the reply otherwise). |
 | 2 capture nominal layout | PASS. `verify_tolerances` 5 mm / 2 deg. |
 | 3 reset + verify | PASS (all 13 prims within 0.05 mm; arm home, gripper open). |
-| 4 contacts | PASS via `tools/pick_check.py`: all four pick steps of `agents/tasks/fmb_assembly_2.executor.yaml` grasp, lift 200-300 mm, slip < 1 mm, found/lost on both pads, nothing else touched. Empty close shows nothing because `enabledSelfCollisions` is off. |
+| 4 contacts | PASS via `tools/pick_check.py`: all four pick steps of `config/tasks/fmb_assembly_2.yaml` grasp, lift 200-300 mm, slip < 1 mm, found/lost on both pads, nothing else touched. Empty close shows nothing because `enabledSelfCollisions` is off. |
 | 5 headless | PASS with `isaac/headless/run_headless.sh` (wrapper sources `~/isaacsim/setup_ros_env.sh`); `/clock` and `/joint_states` ~38 Hz; `pick_line_green` passed on headless. |
 | 6 recording | PASS (headless): `python3 -m runner.recorder.episode_recording records/manual_test --seconds 10` gave a 9.4 s MCAP (1008 msgs: joint_states, tf, tf_static, camera1/2 poses) and 74 JPEG frames with frames.jsonl (sim-time stamps). Frames ~8 Hz effective against the 10 Hz setting (source /recorder_rgb ~34 Hz; ~0.8 s recorder start-up). Topics without a publisher (watchdog, pad_contacts without the relay) are simply absent from the bag. |
 | 7 camera1 | PASS (GUI): `/World/ur5e/wrist_3_link/camera1` + `/Graph/ROS_Camera1`, saved in the stage (timeline stopped). 640x400, H94 x V68 deg (fx 298.4), ~25 Hz rgb + depth + camera_info on `/camera1/...`, frame `camera1_optical_frame`. Mount (sim choice, not calibrated): optical frame at (0, -0.07, 0.03) in wrist_3_link, tilted 18 deg toward the tool axis. The static TF wrist_3_link -> camera1_optical_frame comes from `sim_moveit_bringup/config/cameras.yaml` (relaunch the cell). New server commands `setup_cameras`, `timeline(action)`, `save_stage` (refuses while playing). |
@@ -23,12 +105,12 @@ Fixed on 2026-11-17 (uncommitted): contacts folded per pad/body pair with the co
 
 Also 2026-11-17: on-pad test is now a box, `scene.pad_face` (pad face measured from the inner-finger collision mesh: plane y = 0 of the contact frames, 20.2 x 29.8 mm; all eight pick_check contacts inside, u_orange included); `grasp_width_tolerance_m` 0.02 -> 0.005 for the FMB parts in `model_registry.yaml` (regenerated `config/parts/*`, robot_backend rebuilt); stale intruder removed from the saved stage offline (backup kept outside the repo; git has the old file too); `python3 -m runner.recorder.episode_recording` CLI.
 
-Open:
-- `line_green`: plateau 25.8 mm against `grasp_width_m: 0.03` leaves 0.8 mm inside the new 5 mm band (the part is ~26 mm wide). Consider `grasp_width_m: 0.026` in `agents/tasks/fmb_assembly_2.executor.yaml`. Re-run `tools/pick_check.py` after the tolerance change.
+Open from M6:
+- `line_green`: plateau 25.8 mm against `grasp_width_m: 0.03` leaves 0.8 mm inside the new 5 mm band (the part is ~26 mm wide). Consider `grasp_width_m: 0.026` in `config/tasks/fmb_assembly_2.yaml`. Re-run `tools/pick_check.py` after the tolerance change.
 - `pick_inverted_u_yellow` pre-grasp: MoveIt failed 1 of 3 plans although IK is collision-free; pick_check retries 3 times, the executor may hit it too.
 - camera1: Gemini 335L FOV/resolution are from memory (TODO(mohammad)); replace the mount with the hand-eye calibration when it exists (both camera files, keep in step). The RG2 housing fills the lower ~40% of the image; move the camera further out or reduce the tilt if that is too much.
 
-## What Milestone 6 added
+### What Milestone 6 added
 
 | Path | What |
 |---|---|
@@ -45,71 +127,9 @@ Checked here: the Kit modules compile; 20 pure tests (layouts, recording command
 
 A stage fact worth knowing: `assets/usd/assembly_room.usd` still contains a stale injected prim `/World/WatchdogIntruders/foreign_a41b84` from a paper run. `reset` removes it each episode; you may want to delete it from the saved stage.
 
-## What you run to check Milestone 6
-
-1. **Command server in the GUI first** (lowest risk). Isaac open, stage playing. Paste `isaac/cell_command_server/start_in_script_editor.py` into the Script Editor and run it. Expect `cell command server: 127.0.0.1 9010 commands: [...]`. Then from a terminal:
-
-   ```bash
-   printf '{"command":"health"}\n' | nc -N 127.0.0.1 9010
-   printf '{"command":"report_poses"}\n' | nc -N 127.0.0.1 9010 | python3 -m json.tool | head -40
-   ```
-
-   Expect `"ok": true`, `playing: true`, `sim_advancing: true`, 23 TF prims, and the stale intruder listed. Paste both outputs.
-
-2. **Capture the nominal layout**, then look at the file:
-
-   ```bash
-   printf '{"command":"capture_layout","params":{"assembly":"fmb_assembly_2","name":"nominal"}}\n' | nc -N 127.0.0.1 9010
-   ```
-
-   It overwrites `config/layouts/fmb_assembly_2/nominal.yaml` with the measured poses. Fill `verify_tolerances` (and jitter ranges if you want variation).
-
-3. **Reset and verify.** Move a part by hand in the viewport, then:
-
-   ```bash
-   printf '{"command":"load_layout","params":{"assembly":"fmb_assembly_2","layout":"nominal","seed":0}}\n' | nc -N 127.0.0.1 9010
-   printf '{"command":"verify_reset"}\n' | nc -N 127.0.0.1 9010
-   ```
-
-   Expect the part back in place, the arm at the SRDF home pose, the gripper open, `removed_intruders` listing the stale prim once, and `verify_reset` passing within your tolerances. This is the first time the experimental prim API is exercised on this stage: if `teleport` or the articulation calls raise, paste the `traceback` field of the response. Then `seed: 3` to see jitter if you set ranges.
-
-4. **Contacts.** With the server up:
-
-   ```bash
-   ros2 run cell_backend_sim pad_contacts_relay &
-   ros2 topic echo /cell/pad_contacts
-   ```
-
-   Close the gripper on a part (the check script or the RG2 service). Expect `found`/`lost` events naming the pad and the part prim.
-
-5. **Headless.** Close the GUI Isaac, then:
-
-   ```bash
-   isaac/headless/run_headless.sh
-   ```
-
-   Expect the `[headless] stage ... playing=True server 127.0.0.1:9010` line, then bring the cell up as usual and confirm `/joint_states` and `/clock` flow. Paste any error: the ROS 2 bridge in headless mode is the step most likely to need a tweak (sourcing).
-
-6. **Recording.** With the cell up:
-
-   From the repo root, workspace sourced:
-
-   ```bash
-   python3 -m runner.recorder.episode_recording records/manual_test --seconds 10
-   ls records/manual_test records/manual_test/frames/recorder | head
-   ```
-
-   Expect `bag/` with an `.mcap`, about 100 JPEG frames with `frames.jsonl`, and `recording.json`.
-
-7. **camera1** only when its pose and size are in `config/cameras/sim.yaml`: run `isaac/cameras/setup_cameras.py` in the Script Editor and save the stage.
-
-## `TODO(mohammad)` introduced in M6
+### `TODO(mohammad)` introduced in M6
 
 - `config/layouts/fmb_assembly_2/nominal.yaml`: positions (capture), `verify_tolerances`, jitter.
 - `config/cameras/sim.yaml: camera1` pose, size, `enabled`; `parent_prim` if not the wrist link.
 - Headless ROS 2 bridge sourcing (see `isaac/headless/run_headless.py` docstring).
 - `budgets.*` and `health.*` in `cell.yaml` remain open for M7/M8.
-
-## What Milestone 7 will do once approved
-
-- `docs/PLANNER_CONTRACT.md`; `executor/planner_template/` (stdio MCP server with the single `execute_task` tool, ROS worker over the platform backends and the planning service, fact journal on `/cell/executor_facts`, notices subscription when `consult` is on, Python 3.10); `executor/authoring_mcp/` (`get_task`, `evaluate_planner`, `read_verdict`, `submit_work`); restricted settings and MCP configs per platform; `runner/episode_runner/` (reset, verify, WatchDog session, recording, `execute_task` under budget and wall guard, episode-end notice, acceptance wait, ground-truth checker on sim, `manifest.json`, `verdict.json`, cleanup).

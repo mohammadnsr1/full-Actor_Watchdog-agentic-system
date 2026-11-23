@@ -18,9 +18,9 @@
         "CELL_PLATFORM": "hardware",
         "CELL_REPO_ROOT": "/cell",
         "CELL_CONFIG_PATH": "/cell/config/cell.yaml",
-        "WATCHDOG_TASK_PATH": "/cell/agents/tasks/fmb_assembly_2.watchdog.yaml",
+        "WATCHDOG_TASK_PATH": "/cell/config/requirements/fmb_assembly_2.yaml",
         "WATCHDOG_SCENARIO": "S3",
-        "WATCHDOG_AGENT_CONFIG": "/cell/agents/config/watchdog_agent_s3.yaml"
+        "WATCHDOG_AGENT_CONFIG": "/cell/agents/config/watchdog_agent_plan_blind.yaml"
       }
     }
   },

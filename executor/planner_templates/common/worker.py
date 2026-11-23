@@ -52,7 +52,7 @@ class Worker:
         with open(f"{repo_root}/config/cell.yaml", "r", encoding="utf-8") as handle:
             self.cell = yaml.safe_load(handle) or {}
         use_sim_time = bool(self.platform.get_optional("use_sim_time", default=False))
-        self.node = Node("planner_template", parameter_overrides=[Parameter("use_sim_time", value=use_sim_time)])
+        self.node = Node("planner", parameter_overrides=[Parameter("use_sim_time", value=use_sim_time)])
         self.cb = ReentrantCallbackGroup()
         backend_pkg = {"sim": "cell_backend_sim", "hardware": "cell_backend_hw"}[self.platform.name]
         self.backends = importlib.import_module(backend_pkg).build_backends(self.node, self.platform, self.cb, self.cell)

@@ -1,4 +1,4 @@
-"""MCP servers that expose high-level robot_backend skills to agents."""
+"""The WatchDog MCP server and its shared helpers (process environment, role context)."""
 
 from __future__ import annotations
 

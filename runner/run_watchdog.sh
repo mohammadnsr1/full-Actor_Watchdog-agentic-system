@@ -1,38 +1,30 @@
 #!/usr/bin/env bash
-# Launch the WatchDog Claude Code session for a scored run.
+# Launch a WatchDog Claude Code session by hand (the plan-blind session).
 #
-# Usage: ./run_watchdog.sh [s1|s2|s3] [1|2]
-#   scenario  s1 (library), s2 (library + authored), s3 (authored only)
-#   assembly  1 = fmb_assembly, 2 = fmb_assembly_2
-# Defaults: s1 1
+# Usage: runner/run_watchdog.sh [plan_blind] [2]
+#
+# Episodes normally start their own WatchDog session (runner/episode_runner,
+# --watchdog plan_blind) with WATCHDOG_SESSION_DIR=records/<episode>/watchdog;
+# this script is for a manual session against a running cell.
 #
 # Model and effort are NOT arguments: they live in watchdog.settings.json as
-# "model" and "effortLevel", edited there before a run (see RUN.md step 4).
-# Both are echoed below so the launch line records what the run used.
+# "model" and "effortLevel". Both are echoed below so the launch line records
+# what the run used.
 #
-# Picks the matching watchdog*.mcp.json, always passes --strict-mcp-config and
-# --settings watchdog.settings.json, and submits the bootstrap instruction as
-# the session's first message so the operator does not type it by hand. The
-# task is fetched in two parts because the combined get_rendered_task result
-# (~50 KB) exceeds the CLI's MCP result-size cap and would arrive as a preview
-# this Read-denied session cannot open -- see RUN.md.
+# Always passes --strict-mcp-config and --settings watchdog.settings.json, and
+# submits the bootstrap instruction as the session's first message. The task
+# is fetched in two parts because the combined get_rendered_task result
+# exceeds the CLI's MCP result-size cap.
+#
+# The v1 S3 session (step-bearing task file) was removed in Milestone 7.
 set -euo pipefail
-# INTEGRATION copy (Milestone 2): paths rewritten to this repo's layout. Only
-# the S3 / fmb_assembly_2 config was carried over, so the scenario and
-# assembly arguments are accepted for compatibility but must be s3 and 2.
 cd "$(dirname "$0")/.."
 
 scenario="${1:-plan_blind}"
 assembly="${2:-2}"
-
-# s3         the unchanged WATCHDOG S3 session (Milestone 2 check; reads the
-#            step-bearing task file; the server now drops executor events, so
-#            it is only a liveness check of the copy)
-# plan_blind the Milestone 5 session: requirements file, plan-blind prompt
 case "$scenario" in
-  s3)         config="config/mcp/watchdog.mcp.json" ;;
   plan_blind) config="config/mcp/watchdog.plan_blind.mcp.json" ;;
-  *) echo "scenario must be s3 or plan_blind (got: $scenario)" >&2; exit 1 ;;
+  *) echo "scenario must be plan_blind (got: $scenario)" >&2; exit 1 ;;
 esac
 if [ "$assembly" != "2" ]; then
   echo "only assembly 2 is available in this repo (got: $assembly)" >&2
@@ -45,7 +37,7 @@ settings="config/settings/watchdog.settings.json"
 # --model/--effort flags -- the highest-precedence form the installed claude
 # CLI supports, so nothing in the user's global settings can silently override
 # what this launch line says. The study varies ONLY the WatchDog's effort;
-# override per run with e.g.:  EFFORT=high ./run_watchdog.sh s2 1
+# override per run with e.g.:  EFFORT=high runner/run_watchdog.sh
 MODEL="${MODEL:-$(python3 -c "import json; print(json.load(open('$settings')).get('model','claude-sonnet-5'))")}"
 EFFORT="${EFFORT:-$(python3 -c "import json; print(json.load(open('$settings')).get('effortLevel','low'))")}"
 

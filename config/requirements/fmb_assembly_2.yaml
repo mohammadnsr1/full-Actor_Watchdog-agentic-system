@@ -3,7 +3,7 @@
 # This file is the ONLY task information the WatchDog receives. It states what
 # must be true at the end (acceptance) and what must never happen (invariants).
 # It carries no steps, no order, no route, and nothing about how the executor
-# works. Derived from agents/tasks/fmb_assembly_2.watchdog.yaml (WATCHDOG
+# works. Derived from agents/tasks/fmb_assembly_2.watchdog.yaml (removed in M7; WATCHDOG
 # commit 595ede33) with the steps:, step_plan: and every mention of the
 # executor's events removed. Part tolerances and limits live in
 # config/parts/watchdog_parts.yaml; grasp widths below are per-part conformance

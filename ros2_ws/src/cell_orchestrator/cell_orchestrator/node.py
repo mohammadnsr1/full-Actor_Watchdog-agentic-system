@@ -147,7 +147,7 @@ class OrchestratorNode(Node):
         # launch/orchestrator.launch.py). gate_timeout_sec is used only as a
         # fallback when a RequestGo caller sends timeout_sec <= 0 -- the
         # normal path is driven entirely by the per-call timeout_sec the
-        # caller (robot_backend.cell.gate.request_go) sends, which must stay
+        # caller (the planner's Worker.gate; v1's robot_backend.cell.gate) sends, which must stay
         # in sync with this default; see that module's config note on the
         # MCP-client-vs-gate-timeout ordering requirement.
         #
