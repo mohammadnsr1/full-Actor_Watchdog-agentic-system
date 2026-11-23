@@ -1,8 +1,8 @@
 # Architecture
 
 Written 2026-11-23 (Milestone 7). How the code and files connect, from the
-simulator and ROS 2 up to the two agents. Diagrams are Mermaid (they render on
-GitHub and in VS Code's Markdown preview with Mermaid support).
+simulator and ROS 2 up to the two agents. Diagrams are plain text so they
+show everywhere (editor, preview, terminal).
 
 Two agents never talk to each other:
 
@@ -16,76 +16,62 @@ Everything between them and the robot is ROS 2, and every ROS name comes from
 
 ## 1. Layers
 
-```mermaid
-flowchart TB
-  subgraph AGENTS["Agents (Claude Code sessions)"]
-    AA["Executor authoring agent<br/>runner/run_authoring.sh<br/>condition plan_given | plan_free"]
-    WA["WatchDog agent<br/>claude -p, started per episode<br/>agents/prompts/*plan_blind*"]
-  end
-
-  subgraph MCP["MCP servers (stdio)"]
-    AM["executor-authoring<br/>executor/authoring_mcp/server.py<br/>get_task, evaluate_planner,<br/>read_verdict, submit_work"]
-    WM["robot-backend-watchdog<br/>robot_backend/mcp_servers/watchdog_mcp_server.py<br/>monitors, evidence, look, halt,<br/>rulings, record_run_verdict"]
-  end
-
-  subgraph HARNESS["Harness (plain Python)"]
-    ER["Episode runner<br/>runner/episode_runner/run_episode.py<br/>reset, record, budget, checker"]
-    PL["Planner = stdio MCP server, one tool execute_task<br/>executor/planner_templates/{plan_given,plan_free}<br/>or a workspace snapshot"]
-    REC["Recorder<br/>runner/recorder/"]
-  end
-
-  subgraph PLAT["Platform layer (ROS 2 Python libraries)"]
-    PI["cell_platform_interfaces<br/>abstract Motion, Gripper, PoseSource, Scene<br/>+ PlatformConfig"]
-    BS["cell_backend_sim / cell_backend_hw<br/>build_backends(node, platform)"]
-  end
-
-  subgraph CELL["Cell nodes (ROS 2, launched by sim_moveit_bringup)"]
-    PS["cell_planning_service<br/>/cell/planning/* plan only<br/>backend moveit (now) | curobo"]
-    MG["move_group<br/>ur5e_moveit_config"]
-    OR["cell_orchestrator<br/>/cell/request_go gate"]
-    PE["cell_physical_events<br/>/cell/physical_events"]
-    TS["scene_tf_sync_node (robot_backend)<br/>/sync_scene_objects, /get_object_pose"]
-    GT["ground_truth_pose_publisher<br/>/camera1/poses, /camera2/poses"]
-    BR["isaac_trajectory_bridge<br/>FJT server + rg2_controller"]
-    PC["pad_contacts_relay<br/>/cell/pad_contacts"]
-  end
-
-  subgraph SIM["Isaac Sim 5.1 (assets/usd/assembly_room.usd)"]
-    KIT["ROS 2 bridge graphs<br/>/clock /joint_states /joint_command /tf, cameras"]
-    CS["cell command server<br/>isaac/cell_command_server, TCP 9010"]
-  end
-
-  AA <--> AM
-  AM -- "runs per episode" --> ER
-  ER -- "MCP client: execute_task(task_ref)" --> PL
-  ER -- "starts" --> WA
-  WA <--> WM
-  ER --> REC
-  ER --> BS
-
-  PL --> BS
-  PL -- "plan_to_pose, plan_cartesian, ..." --> PS
-  PL -- "request_go (once)" --> OR
-  BS --> PI
-
-  PS --> MG
-  PS --> TS
-  BS -- "motion: FollowJointTrajectory" --> BR
-  BS -- "gripper: open/close/guarded_move" --> BR
-  BS -- "poses: /camera1/poses" --> GT
-  BS -- "scene: load_layout, verify, report_poses" --> CS
-
-  WM -- "/camera2/poses, physical events, joint states, tf, images" --> CELL
-  WM -- "halt = cancel FJT goal" --> BR
-  WM -- "signal_ready" --> OR
-
-  BR <--> KIT
-  GT --> KIT
-  PE --> KIT
-  PC --> CS
+```text
+ ┌─ AGENTS ───────────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+ │ EXECUTOR AUTHORING agent (Claude Code)                 │ WATCHDOG agent (claude -p)                           │
+ │ runner/run_authoring.sh [sim|hardware]                 │ one session per episode, plan-blind                  │
+ │                         [plan_given|plan_free]         │ agents/prompts/watchdog_*_plan_blind.txt             │
+ │ writes a planner; never moves the arm itself           │ judges; may halt the arm                             │
+ └────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+                             ▲ MCP (stdio)                                           ▲ MCP (stdio)
+                             ▼                                                       ▼
+ ┌─ MCP SERVERS ──────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+ │ executor/authoring_mcp/server.py                       │ robot_backend/mcp_servers/                           │
+ │ get_task  evaluate_planner  read_verdict               │   watchdog_mcp_server.py (a ROS node too)            │
+ │ submit_work                                            │ monitors, evidence, look, halt, rulings,             │
+ │ feedback filtered by cell.yaml executor_feedback       │ record_run_verdict                                   │
+ └────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+                             │ evaluate_planner -> one episode each                  ▲ the runner starts this session
+                             ▼                                                       │
+ ┌─ HARNESS ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ EPISODE RUNNER  runner/episode_runner/run_episode.py                                                          │
+ │ health, reset + verify, recording, sim budget + wall guard, ground-truth checker                              │
+ │ starts the WatchDog session and the planner; writes records/<id>/ (JSON / JSONL)                              │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                             │ MCP client: execute_task(task_ref), once              ▲ episode_end in, run_verdict out
+                             ▼                                                       ▼
+ ┌─ PLANNER | WATCHDOG ROS SIDE ──────────────────────────┬──────────────────────────────────────────────────────┐
+ │ executor/planner_templates/{plan_given|plan_free}      │ subscribes: /camera2/poses, /cell/physical_events,   │
+ │   or a session snapshot                                │   /joint_states, /tf, camera images,                 │
+ │ planner.py -> worker.py (one ROS node) + geometry.py   │   /cell/watchdog_notices (episode_end)               │
+ │   plan   : /cell/planning/*  (plan only)               │ halt     : cancel the arm's FJT goal                 │
+ │   move   : backends.motion / backends.gripper          │ rulings  : /cell/watchdog_notices                    │
+ │   poses  : backends.executor_poses (camera1)           │ ready    : /cell/signal_ready (opens the gate)       │
+ │   gate   : /cell/request_go, once                      │ verdict  : /watchdog/events (run_verdict)            │
+ │   facts  : /cell/executor_facts (recorded only)        │                                                      │
+ └────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+                             ▲ cell_platform_interfaces + cell_backend_sim|hw        ▲ plain ROS 2 topics and services
+                             ▼                                                       ▼
+ ┌─ CELL NODES (ROS 2, sim_moveit_bringup) ──────────────────────────────────────────────────────────────────────┐
+ │ isaac_trajectory_bridge   FollowJointTrajectory server + rg2_controller (open, close, guarded_move)           │
+ │ cell_planning_service     /cell/planning/*: MoveIt (move_group) now, cuRobo (cell_planning_curobo) later      │
+ │ scene_tf_sync_node        /sync_scene_objects: registry geometry into the planning scene                      │
+ │ cell_orchestrator         the start gate: request_go waits for signal_ready                                   │
+ │ cell_physical_events      lifted / released / contact / stationary, from the cell's own signals               │
+ │ ground_truth_pose_pub.    /camera1/poses (executor) and /camera2/poses (WatchDog), from Isaac TF              │
+ │ pad_contacts_relay        /cell/pad_contacts, polled from the command server                                  │
+ │ all names come from config/platforms/<platform>.yaml                                                          │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                             ▲ ROS 2 bridge + TCP 9010
+                             ▼
+ ┌─ ISAAC SIM 5.1  (assets/usd/assembly_room.usd) ───────────────────────────────────────────────────────────────┐
+ │ ROS 2 bridge graphs: /clock /joint_states /joint_command /tf, camera1 + camera2 images                        │
+ │ cell command server (isaac/cell_command_server, TCP 9010): reset, poses, contacts, timeline                   │
+ │ on hardware this band is the UR driver, the RG6 and the Orbbec cameras (cell_backend_hw)                      │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Read it bottom up:
+Arrows show who calls or starts whom (▲▼ both ways where data flows back). Read it bottom up:
 
 1. **Isaac Sim** runs the stage. Its OmniGraph ROS 2 bridge publishes
    `/clock`, `/joint_states`, `/tf` and camera images, and takes
@@ -116,36 +102,35 @@ Read it bottom up:
 
 ## 2. One episode
 
-```mermaid
-sequenceDiagram
-  participant AM as authoring MCP
-  participant ER as episode runner
-  participant CS as Isaac command server
-  participant WD as WatchDog (agent + server)
-  participant PL as planner (execute_task)
-  participant CELL as cell (bridge, planning, gate)
+```text
+ from               to                     what
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-  AM->>ER: run.sh --planner snapshots/NNN --task ... --seed
-  ER->>ER: lock records/.cell.lock, wait for /clock, health
-  ER->>CS: load_layout(assembly, layout, seed), verify_reset
-  ER->>CS: report_poses (before)
-  ER->>ER: start recording (bag + frames)
-  ER->>WD: claude -p (plan_blind), WATCHDOG_SESSION_DIR=records/<id>/watchdog
-  ER->>PL: start run.sh, call execute_task(task_ref)
-  PL->>CELL: request_go (waits until the WatchDog is ready)
-  WD->>CELL: signal_ready
-  loop each motion
-    PL->>CELL: plan (planning service), then execute (FJT), gripper
-    PL-->>CELL: facts on /cell/executor_facts (recorded in the bag only)
-    WD->>CELL: halt (cancel the goal), when it judges so
-    WD-->>PL: ruling on /cell/watchdog_notices (only if watchdog.consult)
-  end
-  PL-->>ER: {state: done|stopped, reason}
-  ER->>WD: episode_end notice
-  WD-->>ER: run_verdict on /watchdog/events
-  ER->>CS: report_poses (after), ground-truth checker
-  ER->>ER: manifest.json, verdict.json, runner.jsonl
-  ER-->>AM: verdict.json, filtered by executor_feedback
+ ── BEFORE THE PLANNER ──
+ authoring MCP    → episode runner         run.sh --planner snapshots/NNN --task <task file> --seed N
+ episode runner   → itself                 lock records/.cell.lock, wait for /clock, health check
+ episode runner   → Isaac command srv      load_layout(assembly, layout, seed), verify_reset
+ episode runner   → Isaac command srv      report_poses  -> 'before' snapshot
+ episode runner   → recorder               start bag + frames
+ episode runner   → WatchDog               start claude -p (plan_blind), session dir records/<id>/watchdog
+ episode runner   → planner                start run.sh, call execute_task(task_ref) once
+
+ ── DURING THE PLANNER CALL (sim budget + wall guard enforced by the runner) ──
+ planner          → orchestrator           request_go (waits until the WatchDog is ready)
+ WatchDog         → orchestrator           signal_ready  -> the gate opens
+ planner          → planning service       plan_to_pose / plan_cartesian / plan_to_joints
+ planner          → bridge                 execute trajectory (FollowJointTrajectory), gripper open/grasp
+ planner          → /cell/executor_facts   intent, hold, carry, release, claim_done (recorded only)
+ WatchDog         → bridge                 halt = cancel the arm's goal (when it judges so)
+ WatchDog         → planner                ruling on /cell/watchdog_notices (only if watchdog.consult)
+ planner          → episode runner         {state: done | stopped, reason}
+
+ ── AFTER THE PLANNER ──
+ episode runner   → WatchDog               episode_end notice
+ WatchDog         → episode runner         run_verdict on /watchdog/events
+ episode runner   → Isaac command srv      report_poses  -> 'after' snapshot, ground-truth checker
+ episode runner   → records/<id>/          manifest.json, verdict.json, runner.jsonl
+ episode runner   → authoring MCP          verdict, filtered by executor_feedback -> the agent
 ```
 
 The sim budget and the wall guard are enforced by the runner: when either is
@@ -153,18 +138,21 @@ exceeded it cancels the arm's goal and stops the call.
 
 ## 3. The authoring loop and its two conditions
 
-```mermaid
-flowchart LR
-  T1["config/tasks/fmb_assembly_2.yaml<br/>instruction + step plan + steps"] -->|plan_given| GT
-  T2["config/tasks/fmb_assembly_2.plan_free.yaml<br/>goal, constraints, objects<br/>(tools/derive_plan_free_task.py)"] -->|plan_free| GT
-  GT["get_task"] --> AG["authoring agent"]
-  TPG["planner_templates/plan_given<br/>executes the steps"] -->|copied| WS
-  TPF["planner_templates/plan_free<br/>skeleton, no assembly logic"] -->|copied| WS
-  AG -->|edits| WS["executor/workspace/&lt;condition&gt;/&lt;session&gt;/planner"]
-  AG -->|evaluate_planner| SN["snapshots/NNN (frozen)"]
-  SN --> EP["episode(s)"]
-  EP -->|"verdict filtered by executor_feedback<br/>(watchdog | checker | both)"| AG
-  AG -->|submit_work| FIN["snapshots/final"]
+```text
+  plan_given ─ config/tasks/fmb_assembly_2.yaml            plan_free ─ config/tasks/fmb_assembly_2.plan_free.yaml
+               instruction + step plan + steps                          goal, constraints, objects
+                         │                                              (tools/derive_plan_free_task.py)
+                         └──────────────────┬───────────────────────────────────┘
+                                            ▼ get_task
+                                   ┌─────────────────┐
+  planner_templates/<condition> ──►│ AUTHORING AGENT │◄──────────────────────────────┐
+  copied into                      └───┬─────────┬───┘                               │
+  executor/workspace/<condition>/      │ edits   │ evaluate_planner(episodes, seed)  │ feedback:
+    <session>/planner/  ◄──────────────┘         ▼                                   │ verdict filtered by
+                                      snapshots/NNN (frozen copy)                    │ executor_feedback
+                                                 │ runs episodes (section 2)         │ watchdog | checker | both
+                                                 └───────────────────────────────────┘
+                                       submit_work ─► snapshots/final
 ```
 
 | | `plan_given` | `plan_free` |

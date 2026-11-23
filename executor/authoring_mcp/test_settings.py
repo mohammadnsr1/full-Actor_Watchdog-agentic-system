@@ -24,7 +24,7 @@ def test_plan_free_is_plan_given_plus_denies():
         assert given["permissions"]["allow"] == free["permissions"]["allow"]
         assert set(given["permissions"]["deny"]) <= set(free["permissions"]["deny"])
         for path in PLAN_LEAKS:
-            for tool in ("Read", "Grep", "Glob"):
+            for tool in ("Read", "Grep"):
                 assert f"{tool}({path})" in free["permissions"]["deny"], (plat, tool, path)
 
 
@@ -34,3 +34,4 @@ def test_both_conditions_hide_records_and_shell():
         deny = load(name)["permissions"]["deny"]
         assert "Read(./records/**)" in deny and "Bash" in deny
         assert "Edit(./executor/planner_templates/**)" in deny
+        assert not any(r.startswith(("Glob(", "Write(")) for r in deny + load(name)["permissions"]["allow"]), name

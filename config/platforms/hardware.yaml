@@ -87,6 +87,9 @@ gripper:
 services:
   request_go: /cell/request_go
   signal_ready: /cell/signal_ready
+  # The orchestrator's parameter service: the episode runner declares guard_mode
+  # (guarded with a WatchDog session, unguarded without) before each episode.
+  orchestrator_parameters: /cell_orchestrator/set_parameters
   planning_namespace: /cell/planning
   get_object_pose: /get_object_pose
   get_object_poses: /get_object_poses

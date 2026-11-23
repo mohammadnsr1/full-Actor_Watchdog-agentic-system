@@ -41,7 +41,11 @@ inverted_u_yellow disturbed the seated parts).
 Cell up (Isaac playing with the command server, `sim_moveit_bringup`), from
 the repo root.
 
-1. **Baseline, plan given, no WatchDog** (no tokens):
+Steps 1 and 2 run the two *templates* directly, with no agent: they check the
+harness (runner, records, budgets) with a known planner. Step 3 is the actual
+experiment: an agent writes its own planner and the harness evaluates it.
+
+1. **Harness check with the plan-given template** (no agent, no tokens). The template executes your task file's steps as written:
 
    ```bash
    runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id m7-given-s0
@@ -50,7 +54,7 @@ the repo root.
    Expect `records/m7-given-s0/` with `manifest.json`, `verdict.json`,
    `runner.jsonl`, `executor/planner.jsonl`, `bag/`, and no `.log` files.
 
-2. **Plan-free skeleton** (no tokens):
+2. **Harness check with the plan-free skeleton** (no agent, no tokens). The skeleton has no assembly logic; this only checks that the plan-free task and template run end to end:
 
    ```bash
    runner/episode_runner/run.sh --planner executor/planner_templates/plan_free \
@@ -61,7 +65,7 @@ the repo root.
    `stopped: plan-free skeleton: no assembly logic written yet`, outcome
    `failure`.
 
-3. **Authoring session, checker feedback** (authoring tokens only):
+3. **Authoring session: the agent writes the planner** (authoring tokens only). It starts from the plan-free skeleton, decides the sequence, grasps and inserts itself, and every `evaluate_planner` call runs episodes like steps 1-2 with its current planner. `sim plan_given` instead starts it from the step-executing template with the full task file:
 
    ```bash
    AUTHORING_FEEDBACK=checker runner/run_authoring.sh sim plan_free

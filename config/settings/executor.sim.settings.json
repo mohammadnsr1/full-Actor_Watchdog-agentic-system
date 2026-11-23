@@ -10,8 +10,7 @@
       "Read",
       "Glob",
       "Grep",
-      "Edit(./executor/workspace/**)",
-      "Write(./executor/workspace/**)"
+      "Edit(./executor/workspace/**)"
     ],
     "deny": [
       "Read(./records/**)",
@@ -29,11 +28,8 @@
       "Grep(./records/**)",
       "Grep(./config/requirements/**)",
       "Grep(./agents/**)",
-      "Glob(./records/**)",
       "Edit(./config/**)",
-      "Write(./config/**)",
       "Edit(./executor/planner_templates/**)",
-      "Write(./executor/planner_templates/**)",
       "Bash",
       "Task",
       "Agent",
@@ -54,5 +50,6 @@
       "ReadMcpResourceDirTool"
     ]
   },
-  "_condition_comment": "CONDITION plan_given (runner/run_authoring.sh --condition plan_given): the agent gets the full task file, steps included, and starts from executor/planner_templates/plan_given. The plan_free settings are these rules plus extra read denies; executor/authoring_mcp/test_settings.py checks that."
+  "_condition_comment": "CONDITION plan_given (runner/run_authoring.sh --condition plan_given): the agent gets the full task file, steps included, and starts from executor/planner_templates/plan_given. The plan_free settings are these rules plus extra read denies; executor/authoring_mcp/test_settings.py checks that.",
+  "_rules_comment": "Path rules: Read(path) also covers Glob and Grep, Edit(path) also covers Write; Claude Code ignores Glob(path) and Write(path) rules and warns about them."
 }

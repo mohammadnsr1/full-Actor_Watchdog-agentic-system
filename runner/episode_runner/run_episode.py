@@ -124,6 +124,32 @@ class RunnerNode:
         with self._lock:
             return list(self.run_verdicts)
 
+    def set_guard_mode(self, mode: str, timeout_s: float = 5.0) -> dict[str, Any]:
+        """Declare to cell_orchestrator whether this episode is monitored
+        (guarded | unguarded). Without a WatchDog session the gate then opens at
+        once with reason unguarded_by_config instead of waiting out its timeout
+        and logging a misconfigured guarded run."""
+        from rcl_interfaces.msg import Parameter as ParamMsg, ParameterType, ParameterValue
+        from rcl_interfaces.srv import SetParameters
+
+        name = self.platform.service("orchestrator_parameters")
+        client = self.node.create_client(SetParameters, name)
+        try:
+            if not client.wait_for_service(timeout_sec=timeout_s):
+                return {"ok": False, "mode": mode, "detail": f"{name} not available"}
+            req = SetParameters.Request()
+            req.parameters = [ParamMsg(name="guard_mode", value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=mode))]
+            fut = client.call_async(req)
+            deadline = time.monotonic() + timeout_s
+            while not fut.done() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if not fut.done() or fut.result() is None:
+                return {"ok": False, "mode": mode, "detail": "no response"}
+            r = fut.result().results[0]
+            return {"ok": bool(r.successful), "mode": mode, "detail": r.reason}
+        finally:
+            self.node.destroy_client(client)
+
     def publish_episode_end(self, episode_id: str, detail: str) -> None:
         msg = self._Notice()
         msg.wall_time_iso = utc_iso()
@@ -361,7 +387,14 @@ def main(argv: list[str] | None = None) -> int:
         cs = (health.checks.get("command_server") or {}).get("response") or {}
         manifest["versions"] = cs.get("version")
         if not health.ok or (has_sim_clock and rn.sim_now() is None):
-            verdict.update(stage="health", reason="cell unhealthy or no sim clock")
+            failing = {name: (c.get("response") or {}).get("error") or {k: v for k, v in c.items() if k != "response"}
+                       for name, c in health.checks.items() if isinstance(c, dict) and c.get("ok") is False}
+            if has_sim_clock and rn.sim_now() is None:
+                failing["sim_clock"] = "no /clock received within 20 s"
+            hint = (" (is the Isaac cell command server running? isaac/cell_command_server/start_in_script_editor.py "
+                    "in the Script Editor, or isaac/headless/run_headless.sh)") if "command_server" in failing else ""
+            verdict.update(stage="health", reason=f"cell unhealthy: {failing}{hint}", failing_checks=failing)
+            log(f"health check failed: {failing}{hint}", event="health_failed", failing=failing)
             return 2
 
         stage(verdict, "reset")
@@ -380,6 +413,12 @@ def main(argv: list[str] | None = None) -> int:
         base_env = {**os.environ, "CELL_PLATFORM": args.platform, "CELL_REPO_ROOT": str(REPO),
                     "CELL_EPISODE_ID": episode_id, "CELL_EPISODE_DIR": str(ep)}
         base_env.pop("VIRTUAL_ENV", None)
+        guard = rn.set_guard_mode("unguarded" if args.watchdog == "none" else "guarded")
+        manifest["guard_mode"] = guard
+        log(f"guard_mode {guard['mode']} ({'ok' if guard['ok'] else guard['detail']})", event="guard_mode", **guard)
+        if not guard["ok"]:
+            verdict.update(stage="guard_mode", reason=f"could not declare guard_mode {guard['mode']} to the orchestrator: {guard['detail']}")
+            return 2
         wd_proc = start_watchdog(args.watchdog, ep, base_env)
 
         stage(verdict, "planner")
@@ -437,8 +476,9 @@ def main(argv: list[str] | None = None) -> int:
         (ep / "verdict.json").write_text(json.dumps(verdict, indent=2, default=str))
         c = verdict.get("checker") or {}
         log(f"outcome {verdict['outcome']}: planner {(verdict.get('planner') or {}).get('state')}, "
-            f"checker {c.get('parts_placed', '-')}/{c.get('parts_required', '-')} placed, pass={c.get('pass')}; {ep}",
-            event="episode_end", outcome=verdict["outcome"], stage=verdict.get("stage"))
+            f"checker {c.get('parts_placed', '-')}/{c.get('parts_required', '-')} placed, pass={c.get('pass')}"
+            + (f"; stopped at {verdict.get('stage')}: {verdict.get('reason')}" if verdict["outcome"] == "invalid" else "") + f"; {ep}",
+            event="episode_end", outcome=verdict["outcome"], stage=verdict.get("stage"), reason=verdict.get("reason"))
         rn.shutdown()
 
 
