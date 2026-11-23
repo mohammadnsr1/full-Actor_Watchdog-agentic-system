@@ -51,3 +51,19 @@ def test_unknown_mode():
     with pytest.raises(ValueError):
         filter_verdict(VERDICT, "everything")
     assert needs_watchdog("both") and not needs_watchdog("checker")
+
+
+def test_watchdog_to_executor_in_every_mode():
+    said = [
+        {"kind": "halt", "wall_time_iso": "t1", "halt_id": "h1", "suppressed": False, "detail": "third insertion try", "monitor_id": "m"},
+        {"kind": "ruling", "wall_time_iso": "t2", "halt_id": "h1", "ruling": "denied_for_part", "part": "u_orange", "limits": {},
+         "reason": "risk of damage", "published_to_planner": True, "evidence_sources": ["contact_report"]},
+        {"kind": "consultation", "wall_time_iso": "t3", "part": "u_orange", "text": "jammed on the left wall twice",
+         "measurements": {}, "published_to_planner": True, "evidence_sources": ["camera2_pose"]},
+        {"kind": "consultation", "wall_time_iso": "t4", "part": None, "text": "not sent", "published_to_planner": False},
+    ]
+    v = dict(VERDICT, watchdog={"ran": True, "run_verdict": None, "during_episode": said})
+    for mode in ("watchdog", "checker", "both"):
+        out = filter_verdict(v, mode)["watchdog_to_executor"]
+        assert [x["kind"] for x in out] == ["halt", "ruling", "consultation"]
+        assert out[2]["text"] == "jammed on the left wall twice" and "evidence_sources" not in out[2]

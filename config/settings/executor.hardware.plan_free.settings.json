@@ -63,7 +63,9 @@
       "Read(./ros2_ws/src/robot_backend/robot_backend/mcp_servers/**)",
       "Grep(./ros2_ws/src/robot_backend/robot_backend/mcp_servers/**)",
       "Read(./.git/**)",
-      "Grep(./.git/**)"
+      "Grep(./.git/**)",
+      "Read(./executor/prompts/condition_plan_given.md)",
+      "Grep(./executor/prompts/condition_plan_given.md)"
     ]
   },
   "_condition_comment": "CONDITION plan_free (runner/run_authoring.sh --condition plan_free): the agent gets only the goal, constraints and object descriptions (config/tasks/<assembly>.plan_free.yaml via get_task) and the part data, and starts from executor/planner_templates/plan_free, a skeleton with no assembly logic. Identical to the plan_given settings plus read denies on every place the plan, or the v1 executor's pick/place know-how, is written: the task files (the full one carries steps and offsets), the plan_given template and sessions, tools/pick_check.py, robot_backend's test plans (grasp offsets per part), skills and executor MCP servers, and .git. Other plan_free sessions under executor/workspace/plan_free/ stay readable (a deny would also cover the agent's own).",

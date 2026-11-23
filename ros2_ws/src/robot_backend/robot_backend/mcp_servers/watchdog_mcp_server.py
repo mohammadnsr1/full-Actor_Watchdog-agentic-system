@@ -29,6 +29,7 @@ from robot_backend.contracts.loader import load_pick_contract
 from robot_backend.events.bus import EventBus
 from robot_backend.events.schema import (
     AcceptancePayload,
+    ConsultationPayload,
     FramesCapturedPayload,
     KNOWN_EVENT_TYPES,
     RulingPayload,
@@ -325,7 +326,7 @@ _PHYSICAL_EVENT_DESCRIPTIONS: dict[str, str] = {
 }
 _WATCHDOG_WAITABLE_TYPES: tuple[str, ...] = (
     "monitor_fire", "monitor_armed", "monitor_disarmed", "halt", "verdict", "run_verdict",
-    "watchdog_ready", "frames_captured", "look", "observation", "ruling", "acceptance",
+    "watchdog_ready", "frames_captured", "look", "observation", "ruling", "consultation", "acceptance",
 )
 _WAITABLE_EVENT_TYPES: tuple[str, ...] = (
     *PHYSICAL_EVENT_KINDS, EPISODE_END_EVENT_TYPE, *_WATCHDOG_WAITABLE_TYPES,
@@ -507,12 +508,15 @@ class _RunTermination:
     missing_evidence_count: int = 0
     acceptance: dict[str, Any] | None = None
     rulings: list[dict[str, Any]] = None  # type: ignore[assignment]
+    consultations: list[dict[str, Any]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.findings_recorded is None:
             self.findings_recorded = []
         if self.rulings is None:
             self.rulings = []
+        if self.consultations is None:
+            self.consultations = []
 
 
 _RUN = _RunTermination()
@@ -2840,16 +2844,17 @@ if mcp is not None:
 
     @mcp.tool()
     def abort_run(reason: str) -> dict[str, Any]:
-        """Signal that execution should not continue beyond the next step boundary.
+        """Refuse the episode's start: only meaningful before signal_ready.
 
-        Sends a scope="abort" readiness signal to the cell's orchestrator,
-        which then refuses every subsequent request_go with reason="aborted"
-        and releases any gate already blocked. This does NOT stop motion
-        already underway -- halt_execution is the only immediate lever for
-        that; the two are used together when both apply. The executor learns
-        only that the cell declined to release a step; it is told nothing
-        about the monitor or the reason. The reason is recorded on the
-        WatchDog timeline and in the orchestrator log.
+        Sends a scope="abort" signal to the cell's orchestrator, which then
+        refuses the start permission with reason="aborted", so the executor
+        is never started (use it when the scene is unsafe to begin, e.g. a
+        part already damaged or the fixture out of place). Once the episode
+        has started there is no further gate: to stop a running episode,
+        halt_execution and then issue_ruling(..., "escalate"); in
+        halt_enabled mode the episode runner ends the executor's call on an
+        escalate ruling. The reason is recorded on the WatchDog timeline and
+        in the orchestrator log.
         """
         command = "abort_run"
         try:
@@ -3047,6 +3052,57 @@ if mcp is not None:
             return _ok(command, event=event.model_dump(mode="json"), published_to_planner=published, enforcement=enforcement)
         except Exception as exc:
             return _error(command, exc, halt_id=halt_id, ruling=ruling)
+
+    @mcp.tool()
+    def issue_consultation(
+        text: str,
+        evidence_sources: list[str],
+        part: str | None = None,
+        measurements: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Consult the executor, unprompted, in free-form text: what you
+        observed physically that bears on reaching the required tolerance
+        without breaking a constraint or damaging a part (repeated jams, a
+        part seated off its frame, a clamp effort near its limit, a risk you
+        see building). At most 2000 characters.
+
+        measurements is optional: names ending in their unit (_m, _rad, _n,
+        _s, _m_s, _rad_s, _effort, _count) mapped to numbers or lists of
+        numbers; vectors need "frame". part is the part it concerns, if any.
+        evidence_sources is required (same vocabulary as record_verdict); a
+        camera1 source marks it shared_source.
+
+        Always recorded as a consultation event and passed to the executor's
+        authoring agent with the episode feedback; also published on the
+        notices topic for the running planner when the cell's consult setting
+        is on.
+        """
+        command = "issue_consultation"
+        try:
+            ctx = _ensure_watchdog()
+            clean_text, clean = _rulings.validate_consultation(text, measurements)
+            sources = list(evidence_sources or [])
+            if not sources:
+                raise ValueError("evidence_sources is required")
+            unknown = sorted(set(sources) - set(_EVIDENCE_SOURCES))
+            if unknown:
+                raise ValueError(f"unknown evidence_sources {unknown}; valid: {list(_EVIDENCE_SOURCES)}")
+            published = False
+            if ctx.consult and ctx.notices is not None:
+                ctx.notices.publish_consultation(part, clean_text, clean)
+                published = True
+            shared = _is_shared_source(sources)
+            payload = ConsultationPayload(part=part, text=clean_text, measurements=clean, published_to_planner=published,
+                                          evidence_sources=sources, shared_source=shared)
+            event = make_event("consultation", payload)
+            ctx.event_bus.publish(event)
+            with _RUN_LOCK:
+                _RUN.consultations.append(payload.model_dump(mode="json"))
+                if shared:
+                    _RUN.shared_source_count += 1
+            return _ok(command, event=event.model_dump(mode="json"), published_to_planner=published)
+        except Exception as exc:
+            return _error(command, exc)
 
     @mcp.tool()
     def inspect_acceptance() -> dict[str, Any]:

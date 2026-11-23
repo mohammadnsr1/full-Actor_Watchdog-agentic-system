@@ -98,7 +98,16 @@ planner:
 watchdog:
   # record_only | halt_enabled  (Milestone 5 reads this)
   mode: record_only
+  # consult: the planner subscribes to the WatchDog's notices (rulings after a
+  # halt, and the WatchDog's free-text consultations, Milestone 7). The
+  # authoring agent gets published rulings and consultations in its feedback.
   consult: false
+  # The start permission (Milestone 7): with a WatchDog session, the episode
+  # runner asks cell_orchestrator for it before calling execute_task, so the
+  # WatchDog prepares (reads the requirements, arms its monitors and wakes)
+  # while nothing moves. After this long the episode starts anyway and the
+  # record says timeout_gate. The episode budgets start after the permission.
+  ready_timeout_s: 300.0
   halt:
     # The primary cancel target is the platform's motion.cancel_service (the
     # bridge's FollowJointTrajectory cancel on sim, the UR driver controller's
@@ -114,33 +123,44 @@ watchdog:
 # says so once at start; nothing is estimated. Units in the key names.
 # Files: config/parts/watchdog_parts.yaml supplies the part and feature ids.
 physical_events:
+  # Starting values set 2026-11-23 from the r3 episode's bag
+  # (records/m7-first-s0-r3: 12 steps, four parts, sim ground truth); revisit
+  # on hardware, where poses are noisy (TODO(mohammad)). A threshold of 0
+  # disables its detector.
   publish_rate_hz: 20.0
   # motion_started / motion_stopped: arm joint-speed norm (rad/s) with a
   # debounce window; source joint_state.
   motion_speed_threshold_rad_s: 0.001
   motion_debounce_s: 0.001
   # effort_rising: slope of the gripper effort joint over a window; source joint_state.
-  effort_rise_rate_per_s: 0.0
-  effort_rise_window_s: 0.0
+  # Measured |finger_joint| effort: ~0.03 at rest, up to 126 in a grasp; slope
+  # p99 180/s while closing on a part, ~0 otherwise.
+  effort_rise_rate_per_s: 20.0
+  effort_rise_window_s: 0.2
   # contact_made / contact_lost by effort proxy (used only while the platform
   # has no pad contact report); source effort_proxy with the confidence below.
-  effort_contact_threshold: 0.0
-  effort_contact_ticks: 0
-  effort_proxy_confidence: 0.0
+  # 5.0 is ~150x the resting effort and well under a grasp.
+  effort_contact_threshold: 5.0
+  effort_contact_ticks: 3
+  effort_proxy_confidence: 0.5
   # part_lifted: rise above the part's rest height; held = within hold_distance_m
   # of the TCP; part_released: beyond release_distance_m; part_settled: speed
   # under settle_speed_m_s for settle_window_s. Sources camera2_pose + robot_tf.
-  lift_threshold_m: 0.0
-  hold_distance_m: 0.0
-  release_distance_m: 0.0
-  settle_speed_m_s: 0.0
-  settle_window_s: 0.0
+  # Measured: lifts of 0.2-0.3 m; a held part 0.04-0.09 m from the TCP.
+  lift_threshold_m: 0.01
+  hold_distance_m: 0.12
+  release_distance_m: 0.15
+  # Sim ground truth reads exactly 0 m/s at rest; 5 mm/s for half a second.
+  settle_speed_m_s: 0.005
+  settle_window_s: 0.5
   # part_approaching_feature / part_engaged_feature: distance between the held
   # part and each of its feature frames (watchdog_parts.yaml features).
-  approach_distance_m: 0.0
-  engage_distance_m: 0.0
+  # Measured: seated parts end 1-4 mm from their placement frames.
+  approach_distance_m: 0.05
+  engage_distance_m: 0.01
   # workspace_object_appeared: a camera2 detection id that is not a known part.
-  unknown_object_min_confidence: 0.0
+  # Every id the sim camera reports today is a known part or frame.
+  unknown_object_min_confidence: 0.5
 
 # Milestone 6+. Left as a shape so later code has one place to read.
 budgets:
@@ -152,9 +172,10 @@ budgets:
   episode_wall_guard_s: 900
 
 health:
-  # TODO(mohammad): staleness limits for the supervisor's checks.
-  joint_states_max_age_s: 0.0
-  sim_clock_max_stall_s: 0.0
+  # Staleness limits for the supervisor's checks (starting values 2026-11-23;
+  # /joint_states and /clock run at ~38 Hz on sim). TODO(mohammad): hardware.
+  joint_states_max_age_s: 1.0
+  sim_clock_max_stall_s: 2.0
 
 recording:
   # Per-episode MCAP bag (runner/recorder/episode_recording.py). Keys name

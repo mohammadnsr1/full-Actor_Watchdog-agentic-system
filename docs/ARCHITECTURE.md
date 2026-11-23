@@ -35,19 +35,20 @@ Everything between them and the robot is ROS 2, and every ROS name comes from
                              ▼                                                       │
  ┌─ HARNESS ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
  │ EPISODE RUNNER  runner/episode_runner/run_episode.py                                                          │
- │ health, reset + verify, recording, sim budget + wall guard, ground-truth checker                              │
- │ starts the WatchDog session and the planner; writes records/<id>/ (JSON / JSONL)                              │
+ │ health, reset + verify, recording, START PERMISSION (waits for the WatchDog's ready),                         │
+ │ sim budget + wall guard (from the permission on), ground-truth checker,                                       │
+ │ starts the WatchDog first, the planner only after the permission; writes records/<id>/                        │
  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                              │ MCP client: execute_task(task_ref), once              ▲ episode_end in, run_verdict out
                              ▼                                                       ▼
  ┌─ PLANNER | WATCHDOG ROS SIDE ──────────────────────────┬──────────────────────────────────────────────────────┐
- │ executor/planner_templates/{plan_given|plan_free}      │ subscribes: /camera2/poses, /cell/physical_events,   │
- │   or a session snapshot                                │   /joint_states, /tf, camera images,                 │
- │ planner.py -> worker.py (one ROS node) + geometry.py   │   /cell/watchdog_notices (episode_end)               │
- │   plan   : /cell/planning/*  (plan only)               │ halt     : cancel the arm's FJT goal                 │
- │   move   : backends.motion / backends.gripper          │ rulings  : /cell/watchdog_notices                    │
- │   poses  : backends.executor_poses (camera1)           │ ready    : /cell/signal_ready (opens the gate)       │
- │   gate   : /cell/request_go, once                      │ verdict  : /watchdog/events (run_verdict)            │
+ │ executor/planner_templates/{plan_given|plan_free}      │ wakes on : its monitors + wake conditions over       │
+ │   or a session snapshot                                │   /camera2/poses, /cell/physical_events,             │
+ │ planner.py -> worker.py (one ROS node) + geometry.py   │   /joint_states, /tf, images; episode_end notice     │
+ │   plan   : /cell/planning/*  (plan only)               │ halt     : damage risk / unrecoverable only          │
+ │   move   : backends.motion / backends.gripper          │ rulings, consultations: /cell/watchdog_notices       │
+ │   poses  : backends.executor_poses (camera1)           │ ready    : /cell/signal_ready (start permission)     │
+ │   consult: w.consultations() (WatchDog text)           │ verdict  : /watchdog/events (run_verdict)            │
  │   facts  : /cell/executor_facts (recorded only)        │                                                      │
  └────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
                              ▲ cell_platform_interfaces + cell_backend_sim|hw        ▲ plain ROS 2 topics and services
@@ -56,7 +57,7 @@ Everything between them and the robot is ROS 2, and every ROS name comes from
  │ isaac_trajectory_bridge   FollowJointTrajectory server + rg2_controller (open, close, guarded_move)           │
  │ cell_planning_service     /cell/planning/*: MoveIt (move_group) now, cuRobo (cell_planning_curobo) later      │
  │ scene_tf_sync_node        /sync_scene_objects: registry geometry into the planning scene                      │
- │ cell_orchestrator         the start gate: request_go waits for signal_ready                                   │
+ │ cell_orchestrator         start permission: the runner's request_go waits for signal_ready                    │
  │ cell_physical_events      lifted / released / contact / stationary, from the cell's own signals               │
  │ ground_truth_pose_pub.    /camera1/poses (executor) and /camera2/poses (WatchDog), from Isaac TF              │
  │ pad_contacts_relay        /cell/pad_contacts, polled from the command server                                  │
@@ -82,7 +83,8 @@ Arrows show who calls or starts whom (▲▼ both ways where data flows back). R
      RG2 controller (open/close/guarded move);
    - `cell_planning_service`: planning only, it never moves the arm. MoveIt
      today; cuRobo via `cell_planning_curobo` once installed;
-   - `cell_orchestrator`: the start gate;
+   - `cell_orchestrator`: the start permission (the runner asks, the
+     WatchDog's signal_ready grants it; reset per episode);
    - `cell_physical_events`: lifted, released, contact and stationarity events
      from the cell's own signals;
    - `ground_truth_pose_publisher`: on sim, camera1 and camera2 poses from
@@ -106,23 +108,26 @@ Arrows show who calls or starts whom (▲▼ both ways where data flows back). R
  from               to                     what
  ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ── BEFORE THE PLANNER ──
+ ── BEFORE ANYTHING MOVES ──
  authoring MCP    → episode runner         run.sh --planner snapshots/NNN --task <task file> --seed N
  episode runner   → itself                 lock records/.cell.lock, wait for /clock, health check
  episode runner   → Isaac command srv      load_layout(assembly, layout, seed), verify_reset
  episode runner   → Isaac command srv      report_poses  -> 'before' snapshot
  episode runner   → recorder               start bag + frames
+ episode runner   → orchestrator           declare episode_id + guard_mode (resets the previous episode)
  episode runner   → WatchDog               start claude -p (plan_blind), session dir records/<id>/watchdog
- episode runner   → planner                start run.sh, call execute_task(task_ref) once
+ WatchDog         → itself                 prepare: requirements, contracts, monitors + wake conditions
+ WatchDog         → orchestrator           signal_ready
+ episode runner   → orchestrator           request_go(phase=run) -> START PERMISSION (immediate if no WatchDog)
+ episode runner   → planner                start run.sh, call execute_task(task_ref) once; budgets start
 
- ── DURING THE PLANNER CALL (sim budget + wall guard enforced by the runner) ──
- planner          → orchestrator           request_go (waits until the WatchDog is ready)
- WatchDog         → orchestrator           signal_ready  -> the gate opens
+ ── DURING THE PLANNER CALL (no gating; physics wakes the WatchDog) ──
  planner          → planning service       plan_to_pose / plan_cartesian / plan_to_joints
  planner          → bridge                 execute trajectory (FollowJointTrajectory), gripper open/grasp
  planner          → /cell/executor_facts   intent, hold, carry, release, claim_done (recorded only)
- WatchDog         → bridge                 halt = cancel the arm's goal (when it judges so)
- WatchDog         → planner                ruling on /cell/watchdog_notices (only if watchdog.consult)
+ cell physics     → WatchDog               monitor fires / wake condition matches -> wait_for_event returns
+ WatchDog         → bridge                 halt = cancel the arm's goal (or a halt_on_fire monitor does it)
+ WatchDog         → planner                ruling after a halt; free-text consultation -- only if consult
  planner          → episode runner         {state: done | stopped, reason}
 
  ── AFTER THE PLANNER ──
@@ -130,10 +135,13 @@ Arrows show who calls or starts whom (▲▼ both ways where data flows back). R
  WatchDog         → episode runner         run_verdict on /watchdog/events
  episode runner   → Isaac command srv      report_poses  -> 'after' snapshot, ground-truth checker
  episode runner   → records/<id>/          manifest.json, verdict.json, runner.jsonl
- episode runner   → authoring MCP          verdict, filtered by executor_feedback -> the agent
+ episode runner   → authoring MCP          verdict (filtered by executor_feedback) + WatchDog halts,
+                                         rulings, consultations -> the agent
 ```
 
-The sim budget and the wall guard are enforced by the runner: when either is
+The WatchDog prepares while nothing moves; the start permission is the only
+synchronisation, and the budgets start after it. The sim budget and the wall
+guard are enforced by the runner: when either is
 exceeded it cancels the arm's goal and stops the call.
 
 ## 3. The authoring loop and its two conditions
@@ -158,7 +166,7 @@ exceeded it cancels the arm's goal and stops the call.
 | | `plan_given` | `plan_free` |
 |---|---|---|
 | Task file | full | goal, constraints, objects; plan references redacted |
-| Template | runs the steps | gate, safe pose, halt handling, primitives; stops |
+| Template | runs the steps | safe pose, halt handling, primitives; stops |
 | Settings | `config/settings/executor.<platform>.settings.json` | `...plan_free.settings.json` (also denies every place the plan is written) |
 
 Both templates share `executor/planner_templates/common/`: `run.sh`, the MCP
@@ -225,7 +233,7 @@ records/pick_check/<stamp>.json
 | `ros_moveit_backend/motion.py`: plan and execute through MoveGroup | plan: `cell_planning_service` (MoveIt or cuRobo); execute: `cell_backend_sim` FollowJointTrajectory to the bridge |
 | `ros_moveit_backend/gripper.py`, `skills/gripper_skills.py` | `cell_backend_sim/gripper.py` (same RG2 controller); guarded grasp rule in `planner_templates/common/geometry.py` |
 | `interfaces/*` | `cell_platform_interfaces` |
-| `cell/gate.py` | the planner's `Worker.gate()` calling `cell_orchestrator` |
+| `cell/gate.py` (per-step gating) | one start permission per episode, requested by the episode runner from `cell_orchestrator` |
 | poses through TF / `/get_object_pose` | `/camera1/poses` (executor) and `/camera2/poses` (WatchDog) |
 | WatchDog: `watchdog/*`, `watchdog_mcp_server`, `events`, `registry`, `contracts`, `vision` | kept in `robot_backend`, made plan-blind in Milestone 5 |
 | `nodes/scene_tf_sync_node.py`, `utils/geometry.py`, `utils/rg2_geometry.py` | kept |

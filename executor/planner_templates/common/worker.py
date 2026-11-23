@@ -1,5 +1,7 @@
 """ROS side of the planner template: one node, the platform backends, the
-planning service, the fact journal, WatchDog notices and the gate.
+planning service, the fact journal and WatchDog notices (halts, rulings,
+consultations). The start permission is the episode runner's: execute_task is only
+called once the WatchDog (if any) is ready.
 
 A MultiThreadedExecutor spins the node in a background thread; every call
 here blocks the caller (the MCP tool thread) by polling a future, which is the
@@ -59,15 +61,13 @@ class Worker:
 
         from cell_planner_msgs.msg import ExecutorFact, WatchdogNotice
         from cell_planner_msgs.srv import PlanCartesian, PlanToJoints, PlanToPose
-        from cell_sync_interfaces.srv import RequestGo
 
-        self._Fact, self._PlanToPose, self._PlanCartesian, self._PlanToJoints, self._RequestGo = (
-            ExecutorFact, PlanToPose, PlanCartesian, PlanToJoints, RequestGo)
+        self._Fact, self._PlanToPose, self._PlanCartesian, self._PlanToJoints = (
+            ExecutorFact, PlanToPose, PlanCartesian, PlanToJoints)
         ns = str(self.platform.get("services", "planning_namespace")).rstrip("/")
         self.plan_pose = self.node.create_client(PlanToPose, f"{ns}/plan_to_pose", callback_group=self.cb)
         self.plan_cart = self.node.create_client(PlanCartesian, f"{ns}/plan_cartesian", callback_group=self.cb)
         self.plan_joints = self.node.create_client(PlanToJoints, f"{ns}/plan_to_joints", callback_group=self.cb)
-        self.request_go = self.node.create_client(RequestGo, str(self.platform.get("services", "request_go")), callback_group=self.cb)
         self.facts = self.node.create_publisher(ExecutorFact, self.platform.topic("executor_facts"), 50)
         self.consult = bool((self.cell.get("watchdog") or {}).get("consult", False))
         self._notices: list[Any] = []
@@ -89,7 +89,7 @@ class Worker:
             if not client.wait_for_service(timeout_sec=20.0):
                 raise StepFailed(f"planning service {label} ({client.srv_name}) not available")
 
-    # -- journal, gate, notices -------------------------------------------------
+    # -- journal, notices --------------------------------------------------------
 
     def fact(self, kind: str, verb: str = "", part: str = "", feature: str = "", detail: str = "") -> None:
         from datetime import datetime, timezone
@@ -101,20 +101,31 @@ class Worker:
         self.facts.publish(msg)
         log.info("fact %s verb=%s part=%s feature=%s %s", kind, verb, part, feature, detail)
 
-    def gate(self, timeout_s: float = 60.0) -> str:
-        if not self.request_go.wait_for_service(timeout_sec=5.0):
-            log.warning("request_go not available; running ungated")
-            return "no_gate"
-        req = self._RequestGo.Request()
-        req.step_id, req.phase, req.timeout_sec = "episode", "", float(timeout_s)
-        res = _wait(self.request_go.call_async(req), timeout_s + 10.0)
-        reason = "no_response" if res is None else str(res.reason)
-        log.info("gate: %s", reason)
-        return reason
-
     def _on_notice(self, msg: Any) -> None:
         with self._notice_lock:
             self._notices.append(msg)
+        if msg.kind == "consultation":
+            log.info("WatchDog consultation (%s): %s %s", msg.part or "-", msg.detail, msg.measurements_json)
+
+    def consultations(self, since_index: int = 0) -> list[dict[str, Any]]:
+        """WatchDog consultations received since notice index since_index (only
+        when watchdog.consult is on): [{index, part, text, measurements,
+        wall_time_iso}]. Free-form text from the WatchDog about what it
+        observed; what to do with it is the planner's call."""
+        import json
+
+        with self._notice_lock:
+            notices = list(enumerate(self._notices))[since_index:]
+        out = []
+        for i, n in notices:
+            if n.kind != "consultation":
+                continue
+            try:
+                measurements = json.loads(n.measurements_json) if n.measurements_json else {}
+            except ValueError:
+                measurements = {}
+            out.append({"index": i, "part": n.part, "text": n.detail, "measurements": measurements, "wall_time_iso": n.wall_time_iso})
+        return out
 
     def wait_for_ruling(self, since_index: int, timeout_s: float) -> Any:
         """The first halt notice after since_index and the ruling with its halt_id."""

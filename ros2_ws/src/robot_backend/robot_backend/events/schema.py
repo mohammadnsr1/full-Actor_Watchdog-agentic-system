@@ -577,6 +577,20 @@ class RulingPayload(BaseModel):
     shared_source: bool = False
 
 
+class ConsultationPayload(BaseModel):
+    """WatchDog consultation to the executor (issue_consultation): free-form
+    text, optional measurements; published when watchdog.consult is on."""
+
+    model_config = ConfigDict(frozen=True)
+
+    part: str | None
+    text: str
+    measurements: dict[str, Any] = {}
+    published_to_planner: bool
+    evidence_sources: list[str] = []
+    shared_source: bool = False
+
+
 class AcceptancePayload(BaseModel):
     """WatchDog acceptance inspection at episode end (inspect_acceptance)."""
 
@@ -629,6 +643,7 @@ class EventEnvelope(BaseModel):
         "look",
         "observation",
         "ruling",
+        "consultation",
         "acceptance",
     ]
     timestamp_ns: int
@@ -662,6 +677,7 @@ _WATCHDOG_EVENT_TYPES = frozenset(
         # ObservationPayload.role is the authoritative discriminator.
         "observation",
         "ruling",
+        "consultation",
         "acceptance",
     }
 )
@@ -687,6 +703,7 @@ EVENT_TYPE_PAYLOAD_CLASSES: dict[str, type[BaseModel]] = {
     "look": LookPayload,
     "observation": ObservationPayload,
     "ruling": RulingPayload,
+    "consultation": ConsultationPayload,
     "acceptance": AcceptancePayload,
 }
 
@@ -758,6 +775,7 @@ def make_event(
         "look",
         "observation",
         "ruling",
+        "consultation",
         "acceptance",
     ],
     payload: (
@@ -778,6 +796,7 @@ def make_event(
         | LookPayload
         | ObservationPayload
         | RulingPayload
+        | ConsultationPayload
         | AcceptancePayload
     ),
 ) -> EventEnvelope:

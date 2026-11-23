@@ -7,8 +7,10 @@ Working out how to do the assembly is the planner's job.
 
 What is already here (docs/PLANNER_CONTRACT.md):
 
-    Planner.run()      the gate, then the safe joint pose; then nothing:
-                       it returns "stopped" until assembly logic is written
+    Planner.run()      the safe joint pose; then nothing: it returns
+                       "stopped" until assembly logic is written
+                       (execute_task is called only once the episode runner
+                       has the start permission, so there is no gate here)
     Planner.move()     run a planned motion; a WatchDog halt (a cancelled
                        trajectory) is handled per watchdog.consult: stop, or
                        wait for the ruling and re-plan when allowed
@@ -26,8 +28,10 @@ Primitives (worker.py, the ROS side; every name from the platform config):
     w.grasp(part, width, f)    guarded close to `width` under force `f`;
                                result .ok .stop_reason .final_width_m .detail
     w.fact(kind, ...)          executor fact journal (intent, hold, carry,
-                               release, claim_done): hints for the judges
-    w.gate()                   once, before the first motion
+                               release, claim_done), recorded only
+    w.consultations(since)     WatchDog consultations so far (watchdog.consult
+                               on): free-form text about what it observed
+                               (repeated jams, a part off its frame, a risk)
 
 Geometry (geometry.py): compose, along_own_z, raised, tcp_for (RG2 grasp
 centre + jaw width -> TCP pose), guarded_target_width, grasp_force.
@@ -100,7 +104,6 @@ class Planner:
         self.move(label, (lambda: self.w.plan_straight(pose, vel, acc)) if straight else (lambda: self.w.plan_to_pose(pose, vel, acc)))
 
     def run(self) -> dict[str, Any]:
-        self.w.gate()
         self.w.fact("intent", verb="move_to_safe_pose")
         self.move("safe_pose", lambda: self.w.plan_home(DEFAULT_SCALING, DEFAULT_SCALING))
         # The assembly goes here.

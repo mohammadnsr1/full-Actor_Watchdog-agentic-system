@@ -2,6 +2,11 @@
 
     safe pose -> for each step: pick | place_approach | place -> claim_done
 
+execute_task is called only after the episode runner has the start permission
+(the WatchDog is ready, or there is no WatchDog), so the planner starts at once.
+WatchDog consultations (consult on) are logged as they arrive; this template
+does not act on them.
+
 Every motion goes through the planning service and the platform motion
 backend; every part and frame pose comes from the executor pose channel
 (camera1). A cancelled trajectory is a halt: with watchdog.consult off the
@@ -128,7 +133,6 @@ class Planner:
         self.to_pose(f"{step['step_id']}:retreat", retreat, scaling, straight=True)
 
     def run(self) -> dict[str, Any]:
-        self.w.gate()
         self.w.fact("intent", verb="move_to_safe_pose")
         self.move("safe_pose", lambda: self.w.plan_home(DEFAULT_SCALING, DEFAULT_SCALING))
         done = []

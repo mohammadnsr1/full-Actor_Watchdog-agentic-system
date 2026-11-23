@@ -72,6 +72,11 @@ json.dump({"role": "executor_authoring", "platform": platform, "condition": cond
           open(f"{d}/agent_config.json", "w"), indent=2)
 PYEOF
 
+# The executor agent's system prompt: the role (executor/prompts/authoring_system.md)
+# plus its condition, appended to Claude Code's own; a copy goes to the records.
+system_prompt="$record_dir/system_prompt.md"
+cat executor/prompts/authoring_system.md "executor/prompts/condition_${condition}.md" > "$system_prompt"
+
 export AUTHORING_SESSION_DIR="$session_dir" AUTHORING_RECORD_DIR="$record_dir" AUTHORING_TASK="$task" \
        AUTHORING_ASSEMBLY="$assembly" AUTHORING_CONDITION="$condition" CELL_PLATFORM="$platform"
 [ -n "${AUTHORING_FEEDBACK:-}" ] && export AUTHORING_FEEDBACK
@@ -80,4 +85,5 @@ echo "editable planner: $session_dir/planner   records: $record_dir" >&2
 exec claude --mcp-config "$config" --strict-mcp-config \
   --model "$MODEL" --effort "$EFFORT" \
   --settings "$settings" \
+  --append-system-prompt-file "$system_prompt" \
   "You are writing a planner for a robot cell. Call get_task first and follow its how_to: edit the planner in editable_planner_dir, evaluate it with evaluate_planner, read the feedback, iterate, and call submit_work when it is as good as you can make it."

@@ -21,6 +21,10 @@ connects: `docs/ARCHITECTURE.md`.
 | `runner/run_authoring.sh` | `[platform] [plan_given\|plan_free] [task]`: workspace under `executor/workspace/<condition>/`, bookkeeping under `records/authoring/<session>/`, condition-specific settings. |
 | `config/settings/executor.*.json`, `config/mcp/executor.*.json` | Authoring permissions per platform and condition (plan-free also denies every place the plan is written). |
 | `runner/jsonl.py` | JSON Lines for every log in `records/` (runner events, process stderr, planner log, authoring evals). |
+| Synchronisation | One start permission per episode, held by the runner: it starts the WatchDog, waits for its `signal_ready` (`cell_orchestrator`, `phase="run"`, up to `watchdog.ready_timeout_s`), then starts the planner; budgets start there. No planner gate. Episodes declared to the orchestrator (`episode_id` resets readiness and abort; `guard_mode` unguarded without a WatchDog, so no wait). WatchDog prompt: prepare from the requirements and the physics before ready, then wake on physics only. |
+| WatchDog roles | Prompt rewritten around three roles: conformance and safety; risk analysis (halt only for damage risk, repetition included, or unrecoverability; failed attempts are exploration); free-form consultation (`issue_consultation`), which reaches the running planner when consult is on (`w.consultations()`) and the authoring agent in its feedback (`watchdog_to_executor`). An `escalate` ruling in `halt_enabled` mode ends the episode. |
+| Executor prompt | `executor/prompts/authoring_system.md` + `condition_<condition>.md`, appended by `run_authoring.sh` (`--append-system-prompt-file`); copy in `records/authoring/<session>/system_prompt.md`. |
+| Thresholds | Starting `physical_events` and `health` values in `config/cell.yaml`, measured from the r3 bag (all detectors now on). |
 | Prune | The v1 executor stack, the S3 WatchDog session, unused assets and configs, and tests of v1 code that is not in this repo (list in `docs/PROVENANCE.md`, Milestone 7). |
 
 Checked here: planner templates, authoring MCP, derive tool, settings, JSONL,
@@ -53,6 +57,7 @@ experiment: an agent writes its own planner and the harness evaluates it.
 
    Expect `records/m7-given-s0/` with `manifest.json`, `verdict.json`,
    `runner.jsonl`, `executor/planner.jsonl`, `bag/`, and no `.log` files.
+   `runner.jsonl` shows `start_permission: unguarded_by_config` with ~0 s waited.
 
 2. **Harness check with the plan-free skeleton** (no agent, no tokens). The skeleton has no assembly logic; this only checks that the plan-free task and template run end to end:
 
@@ -77,6 +82,10 @@ experiment: an agent writes its own planner and the harness evaluates it.
    per episode.
 
 4. **WatchDog episode** (WatchDog tokens): step 1 with `--watchdog plan_blind`.
+   Expect `runner.jsonl` to show `start_permission` with `released` after the
+   WatchDog's preparation, and the planner starting only then. With
+   `watchdog.consult: true` and `mode: halt_enabled` in `config/cell.yaml`, consultations
+   appear in `executor/planner.jsonl` and in `verdict.json` under `watchdog.during_episode`.
 
 ### Open
 

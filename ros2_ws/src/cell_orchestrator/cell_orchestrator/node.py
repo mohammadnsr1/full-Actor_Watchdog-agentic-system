@@ -33,6 +33,16 @@ Rules this node exists to keep, not to negotiate:
   - The gate never refuses. proceed is always True. Timing out just means the
     step ran unguarded, which is recorded, not prevented.
 
+Episode start (Milestone 7). The episode runner, not the planner, asks for
+the start permission: RequestGo(step_id=<episode id>, phase="run") waits for
+run-scope readiness alone (the WatchDog's signal_ready(scope="run")) and is
+released by it; nothing else gates the episode, and from then on physics wakes
+the WatchDog. The runner declares each episode with the "episode_id"
+parameter (with guard_mode); a new episode_id clears every run-scoped state
+(readiness, abort, latch, step gates), so one episode's readiness or abort
+never carries into the next. Step and phase gates are the v1 per-step
+protocol, kept but unused by the v2 planner.
+
 Concurrency: RequestGo can hold its response open for tens of seconds while
 SignalReady must be serviced in the meantime, or the very call that would
 release a blocked RequestGo could never run. A SingleThreadedExecutor
@@ -162,6 +172,7 @@ class OrchestratorNode(Node):
         self.declare_parameter("guard_mode", _DEFAULT_GUARD_MODE)
         # Service names: empty means "from the platform config"
         # (config/platforms/<platform>.yaml services.request_go / signal_ready).
+        self.declare_parameter("episode_id", "")
         self.declare_parameter("request_go_service", "")
         self.declare_parameter("signal_ready_service", "")
         self._default_gate_timeout_sec = float(
@@ -258,7 +269,23 @@ class OrchestratorNode(Node):
                         f"got {param.value!r}"
                     ),
                 )
+        for param in params:
+            if param.name == "episode_id" and str(param.value) != str(self.get_parameter("episode_id").value):
+                self._reset_run_state(str(param.value))
         return SetParametersResult(successful=True)
+
+    def _reset_run_state(self, episode_id: str) -> None:
+        """A new episode: forget the previous one's readiness, abort, latch and gates."""
+        with self._state_lock:
+            self._run_ready_event = threading.Event()
+            self._any_signal_received = threading.Event()
+            self._gates = {}
+            self._first_gate_attempted = False
+            self._latched_unguarded = False
+            self._aborted = threading.Event()
+            self._abort_detail = ""
+            self._phase_signal_log = {}
+        self._log("episode_reset", episode_id=episode_id)
 
     # ------------------------------------------------------------------
     # Logging -- one JSONL record per transition, each carrying wall_ns.
@@ -546,6 +573,15 @@ class OrchestratorNode(Node):
                     guard_mode=guard_mode,
                 )
                 return response
+
+        # The episode start gate: run-scope readiness is all it waits for.
+        if phase == "run":
+            response.proceed = True
+            response.timed_out = False
+            response.waited_sec = time.monotonic() - t0
+            response.reason = "released"
+            self._log("gate_open", step_id=step_id, phase=phase, waited_sec=response.waited_sec, guard_mode=guard_mode)
+            return response
 
         remaining = max(0.0, deadline - time.monotonic())
         released = gate_event.wait(remaining)

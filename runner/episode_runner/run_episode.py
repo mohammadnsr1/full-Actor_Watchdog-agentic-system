@@ -96,6 +96,8 @@ class RunnerNode:
         self._lock = threading.Lock()
         self.sim_time_s: float | None = None
         self.run_verdicts: list[dict[str, Any]] = []
+        # What the WatchDog said during the episode: halts, rulings, consultations.
+        self.watchdog_said: list[dict[str, Any]] = []
         self.node.create_subscription(Clock, platform.topic("clock"), self._on_clock, 10, callback_group=cb)
         self.node.create_subscription(String, platform.topic("watchdog_events"), self._on_event, 100, callback_group=cb)
         self.executor = MultiThreadedExecutor(num_threads=4)
@@ -112,9 +114,15 @@ class RunnerNode:
             env = json.loads(msg.data)
         except Exception:
             return
-        if isinstance(env, dict) and env.get("event_type") == "run_verdict":
+        if not isinstance(env, dict):
+            return
+        kind = env.get("event_type")
+        if kind == "run_verdict":
             with self._lock:
                 self.run_verdicts.append(env)
+        elif kind in ("halt", "ruling", "consultation"):
+            with self._lock:
+                self.watchdog_said.append({"kind": kind, "wall_time_iso": env.get("wall_time_iso"), **(env.get("payload") or {})})
 
     def sim_now(self) -> float | None:
         with self._lock:
@@ -124,11 +132,20 @@ class RunnerNode:
         with self._lock:
             return list(self.run_verdicts)
 
-    def set_guard_mode(self, mode: str, timeout_s: float = 5.0) -> dict[str, Any]:
-        """Declare to cell_orchestrator whether this episode is monitored
-        (guarded | unguarded). Without a WatchDog session the gate then opens at
-        once with reason unguarded_by_config instead of waiting out its timeout
-        and logging a misconfigured guarded run."""
+    def said(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self.watchdog_said)
+
+    def escalation(self) -> dict[str, Any] | None:
+        """The first `escalate` ruling of this episode, if any."""
+        with self._lock:
+            return next((x for x in self.watchdog_said if x["kind"] == "ruling" and x.get("ruling") == "escalate"), None)
+
+    def declare_episode(self, episode_id: str, mode: str, timeout_s: float = 5.0) -> dict[str, Any]:
+        """Declare the episode to cell_orchestrator: episode_id (a new id clears
+        the previous episode's readiness, abort and latch) and guard_mode
+        (guarded with a WatchDog session; unguarded without, so the start
+        permission is immediate and recorded as unguarded_by_config)."""
         from rcl_interfaces.msg import Parameter as ParamMsg, ParameterType, ParameterValue
         from rcl_interfaces.srv import SetParameters
 
@@ -138,15 +155,42 @@ class RunnerNode:
             if not client.wait_for_service(timeout_sec=timeout_s):
                 return {"ok": False, "mode": mode, "detail": f"{name} not available"}
             req = SetParameters.Request()
-            req.parameters = [ParamMsg(name="guard_mode", value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=mode))]
+            req.parameters = [ParamMsg(name=k, value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=v))
+                              for k, v in (("episode_id", episode_id), ("guard_mode", mode))]
             fut = client.call_async(req)
             deadline = time.monotonic() + timeout_s
             while not fut.done() and time.monotonic() < deadline:
                 time.sleep(0.05)
             if not fut.done() or fut.result() is None:
                 return {"ok": False, "mode": mode, "detail": "no response"}
-            r = fut.result().results[0]
-            return {"ok": bool(r.successful), "mode": mode, "detail": r.reason}
+            bad = [r.reason for r in fut.result().results if not r.successful]
+            return {"ok": not bad, "mode": mode, "episode_id": episode_id, "detail": "; ".join(bad)}
+        finally:
+            self.node.destroy_client(client)
+
+    def request_start(self, episode_id: str, timeout_s: float) -> dict[str, Any]:
+        """The episode's start permission from cell_orchestrator (request_go):
+        returns once the WatchDog has signalled ready, at once when guard_mode
+        is unguarded, or after timeout_s (the gate never refuses)."""
+        from cell_sync_interfaces.srv import RequestGo
+
+        name = self.platform.service("request_go")
+        client = self.node.create_client(RequestGo, name)
+        t0 = time.monotonic()
+        try:
+            if not client.wait_for_service(timeout_sec=10.0):
+                return {"ok": False, "reason": f"{name} not available"}
+            req = RequestGo.Request()
+            req.step_id, req.phase, req.timeout_sec = episode_id, "run", float(timeout_s)
+            fut = client.call_async(req)
+            deadline = t0 + timeout_s + 15.0
+            while not fut.done() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            res = fut.result() if fut.done() else None
+            if res is None:
+                return {"ok": False, "reason": "no response", "waited_s": round(time.monotonic() - t0, 2)}
+            return {"ok": True, "proceed": bool(res.proceed), "timed_out": bool(res.timed_out), "reason": str(res.reason),
+                    "waited_s": round(time.monotonic() - t0, 2)}
         finally:
             self.node.destroy_client(client)
 
@@ -207,7 +251,7 @@ def _parse_result(res: Any) -> dict[str, Any]:
 
 
 async def call_planner(planner_dir: Path, task_ref: str, env: dict[str, str], wall_guard_s: float,
-                       sim_budget_s: float | None, rn: RunnerNode, errlog: Any) -> dict[str, Any]:
+                       sim_budget_s: float | None, rn: RunnerNode, errlog: Any, honour_escalation: bool = False) -> dict[str, Any]:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -234,6 +278,9 @@ async def call_planner(planner_dir: Path, task_ref: str, env: dict[str, str], wa
                 sim_now = rn.sim_now()
                 if sim_budget_s and s0 is not None and sim_now is not None and sim_now - s0 > sim_budget_s:
                     stop = "budget_exhausted"
+                if honour_escalation and rn.escalation() is not None:
+                    stop = "watchdog_escalate"
+                    out["escalation"] = rn.escalation()
                 if stop:
                     break
             if stop:
@@ -413,13 +460,26 @@ def main(argv: list[str] | None = None) -> int:
         base_env = {**os.environ, "CELL_PLATFORM": args.platform, "CELL_REPO_ROOT": str(REPO),
                     "CELL_EPISODE_ID": episode_id, "CELL_EPISODE_DIR": str(ep)}
         base_env.pop("VIRTUAL_ENV", None)
-        guard = rn.set_guard_mode("unguarded" if args.watchdog == "none" else "guarded")
+        guard = rn.declare_episode(episode_id, "unguarded" if args.watchdog == "none" else "guarded")
         manifest["guard_mode"] = guard
         log(f"guard_mode {guard['mode']} ({'ok' if guard['ok'] else guard['detail']})", event="guard_mode", **guard)
         if not guard["ok"]:
             verdict.update(stage="guard_mode", reason=f"could not declare guard_mode {guard['mode']} to the orchestrator: {guard['detail']}")
             return 2
         wd_proc = start_watchdog(args.watchdog, ep, base_env)
+
+        # Start permission: the WatchDog prepares while nothing moves, then
+        # signals ready; physics wakes it from then on. The planner is not
+        # started before this, and the budgets start after it.
+        stage(verdict, "start_permission")
+        ready_timeout = float((cell.get("watchdog") or {}).get("ready_timeout_s") or 300.0)
+        permission = rn.request_start(episode_id, ready_timeout if wd_proc is not None else 5.0)
+        verdict["start_permission"] = permission
+        log(f"start permission: {permission.get('reason')} after {permission.get('waited_s')} s",
+            event="start_permission", **permission)
+        if not permission.get("ok"):
+            verdict.update(reason=f"no start permission: {permission.get('reason')}")
+            return 2
 
         stage(verdict, "planner")
         log(f"execute_task({task_path.relative_to(REPO)}) with planner {planner_dir} "
@@ -428,7 +488,8 @@ def main(argv: list[str] | None = None) -> int:
         pump = StderrPump(ep / "executor" / "planner.stderr.jsonl", "planner")
         try:
             verdict["planner"] = asyncio.run(call_planner(planner_dir, str(task_path), planner_env, wall_guard,
-                                                          sim_budget if has_sim_clock else None, rn, pump.file()))
+                                                          sim_budget if has_sim_clock else None, rn, pump.file(),
+                                                          honour_escalation=(wd_proc is not None and (cell.get("watchdog") or {}).get("mode") == "halt_enabled")))
         finally:
             pump.close()
         p = verdict["planner"]
@@ -444,7 +505,8 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(1.0)
         wv = rn.verdicts()
         verdict["watchdog"] = ({"ran": False} if wd_proc is None else
-                               {"ran": True, "run_verdict": wv[-1] if wv else None, "run_verdicts_seen": len(wv)})
+                               {"ran": True, "run_verdict": wv[-1] if wv else None, "run_verdicts_seen": len(wv),
+                                "during_episode": rn.said()})
 
         stage(verdict, "check")
         after = rn.backends.scene.report_poses().data.get("poses") or {}

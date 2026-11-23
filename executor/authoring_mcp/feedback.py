@@ -9,7 +9,10 @@ agent that writes the planner:
     both       both
 
 Always visible: the planner's own completion (state, reason, outcome), the
-budget use, and whether the episode was valid. Never visible: the manifest
+budget use, and whether the episode was valid. Whenever a WatchDog session
+ran: its halts (the planner felt them anyway) and, when `watchdog.consult` was
+on, its rulings and its free-form consultations, which are addressed to the
+executor (`watchdog_to_executor`). Never visible: the manifest
 (input hashes, versions), the WatchDog transcript, other sessions' episodes.
 """
 
@@ -42,6 +45,18 @@ def filter_verdict(verdict: dict[str, Any], mode: str) -> dict[str, Any]:
         out["checker"] = c if c is not None else "not run"
         if c is not None:
             out["checker_pass"] = bool(c.get("pass"))
+    said = (verdict.get("watchdog") or {}).get("during_episode") or []
+    to_executor = []
+    for item in said:
+        kind = item.get("kind")
+        if kind == "halt":
+            to_executor.append({"kind": "halt", "wall_time_iso": item.get("wall_time_iso"), "halt_id": item.get("halt_id"),
+                                "suppressed": item.get("suppressed"), "detail": item.get("detail")})
+        elif kind in ("ruling", "consultation") and item.get("published_to_planner"):
+            keep = ("ruling", "part", "limits", "reason", "halt_id") if kind == "ruling" else ("part", "text", "measurements")
+            to_executor.append({"kind": kind, "wall_time_iso": item.get("wall_time_iso"), **{k: item.get(k) for k in keep}})
+    if to_executor:
+        out["watchdog_to_executor"] = to_executor
     if needs_watchdog(mode):
         w = verdict.get("watchdog") or {}
         if not w.get("ran"):
