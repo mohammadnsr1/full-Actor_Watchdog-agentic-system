@@ -1,0 +1,52 @@
+# Placements of fmb_assembly_2 relative to its fixture (base1): WATCHDOG SIDE ONLY.
+# Measured by tools/measure_placements.py; read by cell_platform_interfaces.placements.
+# The executor's settings deny this file.
+assembly: fmb_assembly_2
+fixture: base1
+measured:
+  wall_time_iso: '2026-11-24T21:09:42.720066+00:00'
+  tool: tools/measure_placements.py
+  platform: sim
+  topic: /camera2/poses
+  samples_per_frame: 20
+placements:
+  u_brown_placement:
+    position:
+    - -3.0e-06
+    - 0.047697
+    - 0.022999
+    orientation_xyzw:
+    - -0.707106
+    - 0.0
+    - -0.0
+    - 0.707107
+  u_orange_placement:
+    position:
+    - -3.0e-06
+    - -0.047403
+    - 0.022999
+    orientation_xyzw:
+    - -0.707106
+    - 0.0
+    - -0.0
+    - 0.707107
+  line_green_placement:
+    position:
+    - -0.000503
+    - -3.0e-06
+    - 0.029999
+    orientation_xyzw:
+    - 1.0e-06
+    - 0.0
+    - -0.0
+    - 1.0
+  inverted_u_yellow_placement:
+    position:
+    - -3.0e-06
+    - -0.001003
+    - 0.021999
+    orientation_xyzw:
+    - -0.707106
+    - 0.0
+    - -0.0
+    - 0.707107
