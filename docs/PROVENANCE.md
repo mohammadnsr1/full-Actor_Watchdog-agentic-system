@@ -701,3 +701,19 @@ No files copied from WATCHDOG or DROIDSTACK. All written from scratch:
 ### Milestone 7, 2026-11-23 (later): where parts go, executor vision
 
 Written from scratch, nothing copied: `cell_platform_interfaces/{placements.py, assembly_views.py}` and `test/test_placements.py`; `tools/measure_placements.py`; `config/assembly_views/fmb_assembly_2/README.md`; `executor/planner_templates/common/test_worker_camera.py`; `executor/authoring_mcp/test_lint.py`. Edited: `TopicPoseSource` (derived placements), WATCHDOG-derived `watchdog/recorder.py` and `watchdog_mcp_server.py` (`assembly_reference`), `cell_physical_events` (derived placements; pad contacts as `contact_made`/`contact_lost`), the runner (derived placements for the checker, plan-free placement check), the worker (drops scene and camera2, `camera1()`, `save_frame()`, `obs_pose` from `geometry.py`), the authoring server (`get_assembly_views`, frames in feedback, `lint_planner`), executor settings, prompts, `tools/derive_plan_free_task.py` (placement sentences redacted).
+
+## Executor baseline, 2026-11-24: prompt-to-assembly pieces (EB1)
+
+Plan and decisions: `docs/EXECUTOR_BASELINE.md`.
+
+### Copied, not committed
+
+`benchmark/` is git-ignored and rebuilt by `tools/fetch_benchmark.sh` from the labmate's prompt-to-assembly clone (`/home/mohammad/prompt-to-assembly`) at commit `f36678cb4029e514fca5bdbf784b8c7c7873e1fc`, with `git archive` (tracked files only, byte-identical). The script holds the commit and the path list; `benchmark/UPSTREAM.json` records the file count and a tree digest. Licence Apache-2.0 (`benchmark/LICENSE`, `benchmark/THIRD_PARTY_NOTICES.md`).
+
+Taken (149 files, 4.3 MB): `assemblies/fmb1/`, `tasks/fmb1_assemble_ur5e_rg2_flat_gen/`, `prompts/`, `src/prompt_to_assembly_ingest/`, `src/droidstack_assembly_checker/` (imported by the ingest; imports no DroidStack), `src/assembly_resolver/`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `pyproject.toml`.
+
+Not taken: their robots, environments, assets, contracts, layout generator, physics profile, reference planners, the other six assemblies and tasks, `robot_record`, `grasp_frame`, `prompt_to_assembly_workspace`, and all DroidStack runtime. This cell has its own robot, gripper and controllers.
+
+### New and edited
+
+New: `tools/fetch_benchmark.sh`, `tools/ingest/setup_venv.sh` (venv at `tools/ingest/.venv`, ignored), `docs/EXECUTOR_BASELINE.md`. Edited: `.gitignore` (`benchmark/`).

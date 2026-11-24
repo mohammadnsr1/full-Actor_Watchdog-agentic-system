@@ -229,3 +229,6 @@ records/
 *.jpg
 *.mp4
 agents/transcripts/
+# Pinned partial copy of prompt-to-assembly, never committed; rebuild with
+# tools/fetch_benchmark.sh (docs/EXECUTOR_BASELINE.md, EB1).
+benchmark/

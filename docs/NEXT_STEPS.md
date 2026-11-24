@@ -5,6 +5,10 @@ connects: `docs/ARCHITECTURE.md`.
 
 ## State
 
+- 2026-11-24: the executor is being rebuilt as the research baseline, set up
+  like the labmate's prompt-to-assembly workspace. Plan, decisions and phases
+  EB1-EB8: `docs/EXECUTOR_BASELINE.md`. EB1 (copy into `benchmark/`) done;
+  waiting on the FMB board 2 CAD for EB2.
 - M1 to M6: done and checked (M6 live checks below).
 - M7 sim side: built and unit-tested here; the live checks below are next.
   Nothing since your last commit is committed. Hardware side of M7 follows.
