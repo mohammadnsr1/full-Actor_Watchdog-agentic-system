@@ -214,12 +214,13 @@ def test_region_is_structural_not_a_failed_registry_lookup(ctx):
 def test_another_objects_value_is_not_accepted_for_this_object(ctx, registry):
     """The check is per-object, so a value valid elsewhere must still fail here.
 
-    max_clamp_effort is NOT uniform across parts (u_brown 100, u_green 500),
-    which makes this the one provenance case that is falsifiable by value
-    alone rather than only by the source string.
+    max_clamp_effort is NOT uniform across parts (u_brown 100, inverted_u_yellow
+    250), which makes this the one provenance case that is falsifiable by value
+    alone rather than only by the source string. (It used u_green until the
+    Board 2 parts left the stage and the registry on 2026-11-24.)
     """
     ctx._held = "u_brown"
-    other = _spec(registry, "u_green", "limits.max_clamp_effort")
+    other = _spec(registry, "inverted_u_yellow", "limits.max_clamp_effort")
     mine = _spec(registry, "u_brown", "limits.max_clamp_effort")
     assert other != mine, "test assumes these differ; if they were unified, pick another pair"
     _, result = _arm(

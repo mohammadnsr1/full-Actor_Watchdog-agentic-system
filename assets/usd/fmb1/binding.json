@@ -1,0 +1,220 @@
+{
+  "schema": "integration.fmb1-stage-binding/1",
+  "what": "Which labmate fmb1 Body each Board 1 prim of assets/usd/assembly_room.usd is, and the rigid transform from fmb1's object frame (bundle root: STEP frame shifted to the centroid, no rotation) to this cell's prim frame: p_prim = R @ p_object + t (column vectors). Prim frames are unchanged; fmb1's frame is the child Xform frame_prim.",
+  "assembly": "fmb1 (FMB Board 1 at 0.7) = this cell's fmb_assembly_2",
+  "measured_by": "point-to-surface registration of the stage meshes against the fmb1 bundles (all 24 axis-aligned rotations; symmetric alternatives exist, see choice); 2026-11-24",
+  "choice": "base1 uses Rz(-90) of the two exact fits, so fmb1 +x is prim -y; then u_brown (prim +y seat) is Body2 / occurrence:01 and u_orange is Body5 / occurrence:04. For the other parts the fit that makes each seated rotation the identity relative to Body1, as fmb1's assembled poses state.",
+  "parts": {
+    "base1": {
+      "body": "Body1",
+      "occurrence": "occurrence:00",
+      "frame_prim": "fmb1_occurrence_00",
+      "bundle": "benchmark/assemblies/fmb1/bundles/Body1.usda",
+      "bundle_sha256": "3b8c0a9036434e1038e4d08b0e7a2e7cea4ce738be30b00cd4c98ab7e183919d",
+      "R_prim_from_object": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "t_prim_from_object_m": [
+        0.0,
+        0.0,
+        -0.000800011558
+      ],
+      "visual_look": "/World/Looks/gray"
+    },
+    "u_brown": {
+      "body": "Body2",
+      "occurrence": "occurrence:01",
+      "frame_prim": "fmb1_occurrence_01",
+      "bundle": "benchmark/assemblies/fmb1/bundles/Body2.usda",
+      "bundle_sha256": "c212c98908a8a7efaa38b602be2c82ed5d49683958440571b1b64865674e75a8",
+      "R_prim_from_object": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "t_prim_from_object_m": [
+        0.0,
+        0.004304054054,
+        0.0
+      ],
+      "visual_look": "/World/Looks/brown"
+    },
+    "u_orange": {
+      "body": "Body5",
+      "occurrence": "occurrence:04",
+      "frame_prim": "fmb1_occurrence_04",
+      "bundle": "benchmark/assemblies/fmb1/bundles/Body5.usda",
+      "bundle_sha256": "e2cd297fc316468eb9622d07fbb8ee7d660fb07cdf46990ff352aa81e186eaac",
+      "R_prim_from_object": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "t_prim_from_object_m": [
+        0.0,
+        0.004304054054,
+        0.0
+      ],
+      "visual_look": "/World/Looks/red"
+    },
+    "line_green": {
+      "body": "Body3",
+      "occurrence": "occurrence:02",
+      "frame_prim": "fmb1_occurrence_02",
+      "bundle": "benchmark/assemblies/fmb1/bundles/Body3.usda",
+      "bundle_sha256": "46878c00fb64125fa434ee43fc582043afa8082ea980114ab723e1228b56bad5",
+      "R_prim_from_object": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "t_prim_from_object_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visual_look": "/World/Looks/green"
+    },
+    "inverted_u_yellow": {
+      "body": "Body4",
+      "occurrence": "occurrence:03",
+      "frame_prim": "fmb1_occurrence_03",
+      "bundle": "benchmark/assemblies/fmb1/bundles/Body4.usda",
+      "bundle_sha256": "bcf1bccc4d379f124ab878d4254bf1fc4d2016257b63e1d11c69188efc885a76",
+      "R_prim_from_object": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "t_prim_from_object_m": [
+        0.0,
+        0.007543854603,
+        0.0
+      ],
+      "visual_look": "/World/Looks/yellow"
+    }
+  },
+  "built": {
+    "by": "tools/build_fmb1_stage.py",
+    "usd": [
+      0,
+      24,
+      5
+    ],
+    "checks": {
+      "base1": {
+        "world_vertex_dev_mm": 3.7935078376652573e-06,
+        "collider_box_vs_mesh_box_mm": 2.634525320122094e-06,
+        "mass_kg": 0.8903079628944397,
+        "inertia_max_abs_diff": 5.97722629204489e-10
+      },
+      "u_brown": {
+        "world_vertex_dev_mm": 1.2735285591591235e-06,
+        "collider_box_vs_mesh_box_mm": 1.681414826815164e-06,
+        "mass_kg": 0.09518250077962875,
+        "inertia_max_abs_diff": 0.0
+      },
+      "u_orange": {
+        "world_vertex_dev_mm": 1.2735285555856793e-06,
+        "collider_box_vs_mesh_box_mm": 1.6814148129373763e-06,
+        "mass_kg": 0.09518250077962875,
+        "inertia_max_abs_diff": 0.0
+      },
+      "line_green": {
+        "world_vertex_dev_mm": 1.1457918339408154e-06,
+        "collider_box_vs_mesh_box_mm": 0.0,
+        "mass_kg": 0.11739175021648407,
+        "inertia_max_abs_diff": 6.523092127759013e-11
+      },
+      "inverted_u_yellow": {
+        "world_vertex_dev_mm": 2.0861625482648805e-06,
+        "collider_box_vs_mesh_box_mm": 4.857778623801323e-07,
+        "mass_kg": 0.09837239980697632,
+        "inertia_max_abs_diff": 0.0
+      }
+    },
+    "tf_targets": [
+      "/World/ur5e/Rg2_mn/onrobot_rg2/right_inner_finger/right_contact_frame",
+      "/World/ur5e/Rg2_mn/onrobot_rg2/left_inner_finger/left_contact_frame",
+      "/World/u_orange",
+      "/World/u_brown",
+      "/World/line_green",
+      "/World/inverted_u_yellow",
+      "/World/base1",
+      "/World/base1/u_orange_placement",
+      "/World/base1/u_brown_placement",
+      "/World/base1/line_green_placement",
+      "/World/base1/inverted_u_yellow_placement",
+      "/World/u_orange_reorient",
+      "/World/base1/fmb1_occurrence_00",
+      "/World/u_brown/fmb1_occurrence_01",
+      "/World/u_orange/fmb1_occurrence_04",
+      "/World/line_green/fmb1_occurrence_02",
+      "/World/inverted_u_yellow/fmb1_occurrence_03"
+    ],
+    "stage_sha256": "93b4834c8933efaf3fb8df850fda8a345acbdeaa6ea225a6e0d16f11bfbaea09",
+    "previous_stage": "git (the committed assets/usd/assembly_room.usd); a copy was left at /tmp/claude-1000/-home-mohammad-full-Actor-Watchdog-agentic-system/1053df2c-2118-49f7-830d-60ac91117e07/scratchpad/assembly_room.before_fmb1.usd"
+  }
+}

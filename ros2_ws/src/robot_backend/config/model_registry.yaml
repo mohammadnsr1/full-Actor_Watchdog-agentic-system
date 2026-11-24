@@ -136,9 +136,12 @@ cell:
 # conformance violation, detected by the supervisory monitor from physical
 # evidence, and is deliberately not prevented by the planner.
 acm_allowed_object_pairs:
-  # FULL CLIQUE over every enabled kind: object entry -- all 10 FMB parts and
-  # both base fixtures are on the table AT THE SAME TIME, so every one of them
-  # can touch every other one at rest.
+  # FULL CLIQUE over every enabled kind: object entry. Since 2026-11-24 that is
+  # the five fmb1 parts (base1 and its four parts, 10 pairs): the Board 2 set
+  # (u_green, base2, hex_blue, hex_red, inverted_u_brown) was taken off the
+  # stage (tools/build_fmb1_stage.py). The history below is about the earlier
+  # ten-part table, when all 10 FMB parts and both base fixtures were on it at
+  # the same time.
   #
   # RESTORED 2026-09-01 (from the four base2 pairs in 07dad83), then widened
   # 2026-09-21 from two disjoint per-assembly cliques to this single clique.
@@ -178,41 +181,6 @@ acm_allowed_object_pairs:
   # kind: frame entries (placement, hole, reorient) are deliberately absent.
   # They never enter the planning scene as collision objects, so an ACM pair
   # naming one would reference a body MoveIt does not have.
-  - [u_green, base2]
-  - [u_green, hex_blue]
-  - [u_green, hex_red]
-  - [u_green, inverted_u_brown]
-  - [u_green, base1]
-  - [u_green, u_brown]
-  - [u_green, u_orange]
-  - [u_green, inverted_u_yellow]
-  - [u_green, line_green]
-  - [base2, hex_blue]
-  - [base2, hex_red]
-  - [base2, inverted_u_brown]
-  - [base2, base1]
-  - [base2, u_brown]
-  - [base2, u_orange]
-  - [base2, inverted_u_yellow]
-  - [base2, line_green]
-  - [hex_blue, hex_red]
-  - [hex_blue, inverted_u_brown]
-  - [hex_blue, base1]
-  - [hex_blue, u_brown]
-  - [hex_blue, u_orange]
-  - [hex_blue, inverted_u_yellow]
-  - [hex_blue, line_green]
-  - [hex_red, inverted_u_brown]
-  - [hex_red, base1]
-  - [hex_red, u_brown]
-  - [hex_red, u_orange]
-  - [hex_red, inverted_u_yellow]
-  - [hex_red, line_green]
-  - [inverted_u_brown, base1]
-  - [inverted_u_brown, u_brown]
-  - [inverted_u_brown, u_orange]
-  - [inverted_u_brown, inverted_u_yellow]
-  - [inverted_u_brown, line_green]
   - [base1, u_brown]
   - [base1, u_orange]
   - [base1, inverted_u_yellow]
@@ -337,69 +305,6 @@ objects:
                                    # air-close floor in Isaac Sim, above the ~0.03 idle
                                    # noise floor.
 
-  # FMB mesh object for the Phase 1 (M1-M4) validation ladder. Folded in from
-  # model_registry_mesh_example.yaml so the whole ladder sees one registry.
-  # mesh collision requires an explicitly authored pose_offset (identity here).
-  u_green:
-    enabled: true
-    kind: object
-    object_id: u_green
-    tf_frame: u_green   # matches the scene prim name (/World/u_green) that Isaac publishes into TF
-    lookup_frame: world
-    class_name: fmb_u
-    source: isaac_gt
-    graspable: true
-    collision:
-      type: mesh
-      mesh_path: assets/u_green_2x.obj   # relative to asset_root (defaults to config/)
-      # u_green_2x.obj is the vertex-baked 2x scale of fmb_u_green.obj (points
-      # already multiplied by 2 in meters) -- scale stays [1,1,1], no double-count.
-      scale: [1.0, 1.0, 1.0]
-      pose_offset:
-        position: {x: 0.0, y: 0.0, z: 0.0}
-        orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-    spec:
-      grasp:
-        # 16.0, lowered from 20.0 on 2026-08-31 from 5 measured cycles
-        # (grasp_effort_test.py --object u_green --lift, 3 mm clearance).
-        # The binding constraint is the max effort reached DURING the probe,
-        # not the settled value: per cycle 21.74 / 27.38 / 24.28 / 31.12 /
-        # 28.68. At 20.0 cycle 1 cleared the threshold by only 8%; at 25.0
-        # cycles 1 and 3 never cross it at all and the close runs out
-        # torque_max_duration_sec to stop_reason="timeout" (the plateau branch
-        # can no longer rescue it -- see rg2_controller's
-        # DEFAULT_EFFORT_PLATEAU_GATE_FRAC = 1.0). 16.0 clears the worst
-        # observed cycle by ~36%.
-        #
-        # This sets STOP RELIABILITY, not clamp force. Clearance sets the
-        # force: the probe's commanded angle is capped at
-        # angle_for_width(width - GRASP_CLEARANCE_M), the fingers stall
-        # against the part, and the residual tracking error IS the force
-        # (measured 0.000386 rad = 29 um at ~74k effort-units/rad -> ~28.7).
-        # Lowering the threshold by 4 units corresponds to ~5 um of travel,
-        # far inside one 0.01 rad probe step, so it does not change which step
-        # the probe stops on and therefore does not lower the peak effort.
-        # To reduce clamp force, reduce GRASP_CLEARANCE_M.
-        force_threshold_n: 35.0
-      tolerances:
-        position_m: 0.01
-        orientation_deg: 10.0
-        lift_height_min_m: 0.05
-        disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
-        grasp_slip_tolerance_m: 0.02
-      limits:
-        # NOT RAISED, and the 5 cycles above breached it 3 times (27.38 /
-        # 31.12 / 28.68 vs 25.0). This is the effort the PART is believed to
-        # survive, and it becomes the grasp_effort_instantaneous invariant in
-        # contracts/loader.py -- raising it to match observed over-clamping
-        # would redefine the contract to make the run pass instead of fixing
-        # the over-clamp. The fix is less clearance (which lowers the ceiling
-        # proportionally), not a looser limit. Left at 25.0 deliberately so
-        # the breach stays visible to the watchdog.
-        max_clamp_effort: 200.0
-        grasp_effort_floor: 0.05
-
   # Static FMB parts sharing the table with u_green. base2 is the fixture/
   # baseplate parts get assembled onto -- not a grasp target, graspable:
   # false, no spec: block (spec is only read for contract loading, which
@@ -410,23 +315,6 @@ objects:
   # planning happens against wherever it was last synced (or never was),
   # not where it actually is. See acm_allowed_object_pairs above for why
   # they're mutually allowed to touch.
-  base2:
-    enabled: true
-    kind: object
-    object_id: base2
-    tf_frame: base2   # matches the scene prim name (/World/base2) that Isaac publishes into TF
-    lookup_frame: world
-    class_name: fmb_base
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: mesh
-      mesh_path: assets/base2_2x.obj
-      scale: [1.0, 1.0, 1.0]
-      pose_offset:
-        position: {x: 0.0, y: 0.0, z: 0.0}
-        orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-
   # hex_blue, hex_red, inverted_u_brown are grasp targets (unlike base2) --
   # graspable: true, so they need a spec: block (grasp_skill reads
   # spec.grasp.force_threshold_n; the contract loader reads
@@ -437,96 +325,6 @@ objects:
   # fault-injection or contract-bound run. u_green's own values ARE
   # sweep-derived (see the ceiling-law comment near the top of this file);
   # these are not, yet.
-  hex_blue:
-    enabled: true
-    kind: object
-    object_id: hex_blue
-    tf_frame: hex_blue   # matches the scene prim name (/World/hex_blue) that Isaac publishes into TF
-    lookup_frame: world
-    class_name: fmb_hex
-    source: isaac_gt
-    graspable: true
-    collision:
-      type: mesh
-      mesh_path: assets/hex_blue_2x.obj
-      scale: [1.0, 1.0, 1.0]
-      pose_offset:
-        position: {x: 0.0, y: 0.0, z: 0.0}
-        orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-    spec:
-      grasp:
-        force_threshold_n: 25.0
-      tolerances:
-        position_m: 0.01
-        orientation_deg: 10.0
-        lift_height_min_m: 0.05
-        disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
-        grasp_slip_tolerance_m: 0.02
-      limits:
-        max_clamp_effort: 150.0
-        grasp_effort_floor: 0.05
-
-  hex_red:
-    enabled: true
-    kind: object
-    object_id: hex_red
-    tf_frame: hex_red   # matches the scene prim name (/World/hex_red) that Isaac publishes into TF
-    lookup_frame: world
-    class_name: fmb_hex
-    source: isaac_gt
-    graspable: true
-    collision:
-      type: mesh
-      mesh_path: assets/hex_red_2x.obj
-      scale: [1.0, 1.0, 1.0]
-      pose_offset:
-        position: {x: 0.0, y: 0.0, z: 0.0}
-        orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-    spec:
-      grasp:
-        force_threshold_n: 25.0
-      tolerances:
-        position_m: 0.01
-        orientation_deg: 10.0
-        lift_height_min_m: 0.05
-        disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
-        grasp_slip_tolerance_m: 0.02
-      limits:
-        max_clamp_effort: 150.0
-        grasp_effort_floor: 0.05
-
-  inverted_u_brown:
-    enabled: true
-    kind: object
-    object_id: inverted_u_brown
-    tf_frame: inverted_u_brown   # matches the scene prim name (/World/inverted_u_brown) that Isaac publishes into TF
-    lookup_frame: world
-    class_name: fmb_u
-    source: isaac_gt
-    graspable: true
-    collision:
-      type: mesh
-      mesh_path: assets/inverted_u_brown_2x.obj
-      scale: [1.0, 1.0, 1.0]
-      pose_offset:
-        position: {x: 0.0, y: 0.0, z: 0.0}
-        orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-    spec:
-      grasp:
-        force_threshold_n: 35.0
-      tolerances:
-        position_m: 0.02
-        orientation_deg: 10.0
-        lift_height_min_m: 0.05
-        disturbance_tolerance_m: 0.02
-        grasp_width_tolerance_m: 0.005   # tightened 2026-11-17 from 0.02 (passed a fully closed gripper); matches the executor band
-        grasp_slip_tolerance_m: 0.02
-      limits:
-        max_clamp_effort: 400.0
-        grasp_effort_floor: 0.05
-
   # ------------------------------------------------------------------
   # Placement frames -- pose-only markers, NOT parts.
   #
@@ -543,13 +341,16 @@ objects:
   # ------------------------------------------------------------------
 
   # ==================================================================
-  # fmb_assembly_2 parts (the fmb1 set, native size -- see
-  # scripts/bake_fmb_2x.py --set fmb1 --scale 1.0 for how the meshes were
-  # produced). base1 is the fixture and is never picked, exactly as base2 is
-  # for the fmb2 set above.
+  # fmb_assembly_2 parts: FMB Board 1 at 0.7 scale, the same assembly as the
+  # labmate's fmb1 (assets/cad/fmb/README.md). The OBJ meshes were baked with
+  # scripts/bake_fmb_2x.py --set fmb1 --scale 1.0 from the earlier stage assets
+  # and equal, in each prim frame, the stage geometry that since 2026-11-24
+  # comes from fmb1's bundles (assets/usd/fmb1/, tools/build_fmb1_stage.py:
+  # same prim frames, box colliders, 1250 kg/m^3). base1 is the fixture and
+  # is never picked.
   #
-  # UNVERIFIED: every spec: block below is a placeholder copied from the fmb2
-  # parts, NOT measured for these parts. They are roughly HALF the size of the
+  # UNVERIFIED: every spec: block below is a placeholder copied from the
+  # (since removed) fmb2 parts, NOT measured for these parts. They are roughly HALF the size of the
   # fmb2 set (u_brown is 70x70x21 mm where u_green_2x is 140x140x42 mm), so
   # the clamp-effort and tolerance numbers have no reason to carry over --
   # run rg2_effort_sweep.py / grasp_effort_test.py against each before
@@ -568,8 +369,8 @@ objects:
     collision:
       type: mesh
       mesh_path: assets/base1.obj
-      # Native size, as delivered -- the fmb1 set is NOT scaled, so unlike the
-      # *_2x meshes there is no baked scale factor here and none to undo.
+      # Baked at the stage's size (FMB Board 1 x0.7), so there is no further
+      # scale factor here and none to undo.
       scale: [1.0, 1.0, 1.0]
       pose_offset:
         position: {x: 0.0, y: 0.0, z: 0.0}
@@ -587,8 +388,8 @@ objects:
     collision:
       type: mesh
       mesh_path: assets/u_brown.obj
-      # Native size, as delivered -- the fmb1 set is NOT scaled, so unlike the
-      # *_2x meshes there is no baked scale factor here and none to undo.
+      # Baked at the stage's size (FMB Board 1 x0.7), so there is no further
+      # scale factor here and none to undo.
       scale: [1.0, 1.0, 1.0]
       pose_offset:
         position: {x: 0.0, y: 0.0, z: 0.0}
@@ -619,8 +420,8 @@ objects:
     collision:
       type: mesh
       mesh_path: assets/u_orange.obj
-      # Native size, as delivered -- the fmb1 set is NOT scaled, so unlike the
-      # *_2x meshes there is no baked scale factor here and none to undo.
+      # Baked at the stage's size (FMB Board 1 x0.7), so there is no further
+      # scale factor here and none to undo.
       scale: [1.0, 1.0, 1.0]
       pose_offset:
         position: {x: 0.0, y: 0.0, z: 0.0}
@@ -651,8 +452,8 @@ objects:
     collision:
       type: mesh
       mesh_path: assets/inverted_u_yellow.obj
-      # Native size, as delivered -- the fmb1 set is NOT scaled, so unlike the
-      # *_2x meshes there is no baked scale factor here and none to undo.
+      # Baked at the stage's size (FMB Board 1 x0.7), so there is no further
+      # scale factor here and none to undo.
       scale: [1.0, 1.0, 1.0]
       pose_offset:
         position: {x: 0.0, y: 0.0, z: 0.0}
@@ -683,8 +484,8 @@ objects:
     collision:
       type: mesh
       mesh_path: assets/line_green.obj
-      # Native size, as delivered -- the fmb1 set is NOT scaled, so unlike the
-      # *_2x meshes there is no baked scale factor here and none to undo.
+      # Baked at the stage's size (FMB Board 1 x0.7), so there is no further
+      # scale factor here and none to undo.
       scale: [1.0, 1.0, 1.0]
       pose_offset:
         position: {x: 0.0, y: 0.0, z: 0.0}
@@ -703,87 +504,9 @@ objects:
         max_clamp_effort: 170.0
         grasp_effort_floor: 0.05
 
-  u_green_placement:
-    enabled: true
-    kind: frame
-    object_id: u_green_placement
-    tf_frame: u_green_placement
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
-
-  inverted_u_brown_placement:
-    enabled: true
-    kind: frame
-    object_id: inverted_u_brown_placement
-    tf_frame: inverted_u_brown_placement
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
-
-  hex_blue_hole:
-    enabled: true
-    kind: frame
-    object_id: hex_blue_hole
-    tf_frame: hex_blue_hole
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
-
-  hex_red_hole:
-    enabled: true
-    kind: frame
-    object_id: hex_red_hole
-    tf_frame: hex_red_hole
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
-
   # Reorient staging frames -- same pose-only pattern as the placement frames
   # above. Each sits at the part's FINAL reorient pose; a two-stage descent
   # reaches the upper waypoint with a target_offset in the frame's own axes.
-
-  u_green_reorient:
-    enabled: true
-    kind: frame
-    object_id: u_green_reorient
-    tf_frame: u_green_reorient
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
-
-  inverted_u_brown_reorient:
-    enabled: true
-    kind: frame
-    object_id: inverted_u_brown_reorient
-    tf_frame: inverted_u_brown_reorient
-    lookup_frame: world
-    class_name: placement_frame
-    source: isaac_gt
-    graspable: false
-    collision:
-      type: box
-      dimensions: [0.001, 0.001, 0.001]
 
   # --- fmb_assembly_2 destination frames (fmb1 set) ---
   # The four *_placement frames below ARE published by Isaac today (confirmed

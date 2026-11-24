@@ -7,11 +7,33 @@ connects: `docs/ARCHITECTURE.md`.
 
 - 2026-11-24: the executor is being rebuilt as the research baseline, set up
   like the labmate's prompt-to-assembly workspace. Plan, decisions and phases
-  EB1-EB8: `docs/EXECUTOR_BASELINE.md`. EB1 (copy into `benchmark/`) done;
-  waiting on the FMB board 2 CAD for EB2.
+  EB1-EB8: `docs/EXECUTOR_BASELINE.md`. EB1 (`benchmark/`, git-ignored) done; FMB CAD split
+  per part in `assets/cad/fmb/`; fmb_assembly_2 turned out to be the labmate's
+  fmb1 (FMB Board 1 at 0.7). Next in EB2: the fmb1 -> stage binding.
 - M1 to M6: done and checked (M6 live checks below).
 - M7 sim side: built and unit-tested here; the live checks below are next.
   Nothing since your last commit is committed. Hardware side of M7 follows.
+
+## Live check: fmb1 on the stage (2026-11-24)
+
+The stage now holds only fmb1 (FMB Board 1 at 0.7), built from the labmate's
+bundles; Board 2 is gone (`docs/EXECUTOR_BASELINE.md`, EB2). Checked offline;
+these need the cell:
+
+1. Open `assets/usd/assembly_room.usd` (GUI or headless). Expect the five parts
+   where they were, in their colours, no payload errors, no Board 2 parts.
+2. Play. Expect the parts to settle without jumping (the colliders are now boxes,
+   0.35 mm contact offset, instead of SDF meshes).
+3. `ros2 run tf2_ros tf2_echo world fmb1_occurrence_01`: the new fmb1 frames are on
+   TF (`fmb1_occurrence_00` to `_04`), beside the unchanged part frames.
+4. Command server `load_layout` + `verify_reset` with the nominal layout: Expect
+   all five parts verified.
+5. `python3 tools/pick_check.py` and one plan-given episode
+   (`runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id fmb1-given-s0`):
+   grasps and inserts with the new colliders, mass (1250 kg/m^3) and friction
+   (part 0.8/0.6 average; on the table about 0.65 now).
+
+If anything is wrong, the previous stage is the committed one: `git checkout assets/usd/assembly_room.usd`.
 
 ## What Milestone 7 added
 

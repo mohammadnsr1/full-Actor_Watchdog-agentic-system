@@ -52,7 +52,7 @@ with BUILD_PLAN's M8.
 Answers to the first open questions (Mohammad, 2026-11-24):
 
 8. **Tasks**: bring from prompt-to-assembly only what the baseline needs, never
-   committed (EB1); `fmb_assembly_2` from Mohammad's FMB CAD (EB2).
+   committed (EB1), all seven assemblies; FMB CAD from the FMB site (EB2).
 9. **Halts** are off in the `consult` condition: the WatchDog only consults.
 10. **Two-way**: the executor may ask for a consultation, or signal that it needs
     one on something. Sharing the plan with the WatchDog is acceptable: the
@@ -83,9 +83,11 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
 
 - `benchmark/` is **git-ignored**, rebuilt by `tools/fetch_benchmark.sh` from
   the pinned commit (`git archive`, byte-identical; `benchmark/UPSTREAM.json`
-  holds the file count and tree digest). 149 files, 4.3 MB.
-- `assemblies/fmb1/` and its task: the worked example of the graph and task
-  format, and a possible second task on this cell.
+  holds the file count and tree digest). 381 files, about 100 MB.
+- `assemblies/`: all seven (Mohammad, 2026-11-24). `fmb1` and its task: the
+  worked example of the graph and task format. **fmb1 is this cell's
+  fmb_assembly_2**: FMB Board 1 at 0.7 scale, identical part geometry and
+  placements (`assets/cad/fmb/README.md`).
 - `prompts/`: the source text for EB5.
 - `src/prompt_to_assembly_ingest` + `src/droidstack_assembly_checker` (which
   the ingest imports for its symmetry math): CAD to assembly graph, run in its
@@ -101,16 +103,45 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
 
 ### EB2. Task bundles for this cell
 
-- `fmb_assembly_2`: ingest Mohammad's FMB Board 2 CAD into
-  `assemblies/fmb_assembly_2/` (tracked). fmb1 is the labmate's FMB Board 1 by
-  the same recipe: `sources/` holds one STEP per part, `_assembly.step`, a
-  `manifest.json` (`assembly-ingest/corpus-manifest/1`: parts, occurrences, a
-  fastening class per mate, `motion_source: anim_drop_script`, each part
-  dropped straight down in assembly order), and the scripts. Without an
-  assembled STEP, compose one from the per-part STEPs and the seated poses in
-  `config/placements/fmb_assembly_2.yaml`. Reconcile part frames with the prims in
-  `assets/usd/assembly_room.usd` (the graph's part frame must be the prim frame,
-  or the bundle carries the transform).
+- FMB CAD (CC BY 4.0) in `assets/cad/fmb/`: the downloads unchanged in
+  `source/`, and each split into one STEP per part by `tools/ingest/split_step.py`
+  (`tools/ingest/split_fmb.sh` regenerates them byte for byte); the three boards
+  also as named assemblies the ingest's `target` step accepts.
+- `fmb_assembly_2` is FMB Board 1 at 0.7, the same assembly as the labmate's
+  fmb1: the Board 1 split at 0.7 equals fmb1's part STEPs at every vertex and its
+  assembled placements to 1e-17 m. So its graph is fmb1's; what remains is the
+  binding: fmb1 occurrence -> this cell's prim and frame (Body1 base1, Body2/Body5
+  the U pair, Body3 line_green, Body4 inverted_u_yellow), with the transform
+  between fmb1's part frames (footprint centre, bottom at z 0) and the prim frames
+  of `assets/usd/assembly_room.usd`.
+- Board 2 (this cell's `base2` family at 1.4) and Board 3: split and accepted by
+  `target`; a full graph also needs a motion declaration (fmb1 vendors the
+  labmate's drop-animation and parametric scripts for that), later if wanted.
+- **Done 2026-11-24 (stage):** the stage carries fmb1. `tools/build_fmb1_stage.py`
+  replaced the five Board 1 assets with fmb1's bundles (box colliders, 1250
+  kg/m^3, `printed_plastic` 0.8/0.6 average, contact offset 0.35 mm), keeping
+  every prim name and prim frame, so no pose, placement, grasp offset or mesh in
+  the configs changed. fmb1's object frame is the child `fmb1_occurrence_NN` of
+  each part, published on TF under that name. Matching and transforms:
+  `assets/usd/fmb1/binding.json` (base1 = Body1 under Rz(-90); u_brown = Body2
+  / occurrence:01, u_orange = Body5 / occurrence:04; line_green = Body3;
+  inverted_u_yellow = Body4). Board 2 removed from the stage and the configs.
+  Independent check: geometry, poses of all child frames, mass, inertia, CoM,
+  materials and TF targets all as intended.
+- **Found, not changed:**
+  - Our seated placement frames sit above fmb1's CAD seats: U parts +2.0 mm,
+    inverted U +1.0 mm, `line_green` +6.55 mm (Body1 frame). fmb1's acceptance band
+    is 1 mm, so a checker using fmb1's seats would fail our placements and vice
+    versa. Re-deriving `/World/base1/*_placement` and
+    `config/placements/fmb_assembly_2.yaml` from fmb1's assembled poses is a
+    separate decision (it moves the WatchDog's targets).
+  - The labmate's resolver composes part-graph features (STEP frame) with
+    occurrence placements (centroid frame), which reads as 16.7 mm off for Body1
+    features; to verify before the prompts point the agent at `frame()`/`locate()`.
+  - Physics choices still open: base1 is dynamic here, kinematic in their cell; the
+    table has no physics material here (0.8/0.6 in theirs), so part-on-table
+    friction is now about 0.65 (was 1.0 with our old 1.0/1.0 max material);
+    speculative CCD is not enabled. Pads stay 1.0 (max wins).
 - `tasks/fmb_assembly_2/task.yaml` in their schema, the subset this cell uses:
   roles, starting scene, goal target, `mate_realization` (all physical-only),
   tolerances, layouts (regions anchored on our table, base1 static, seeded

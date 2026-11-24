@@ -13,7 +13,7 @@ set -euo pipefail
 COMMIT=f36678cb4029e514fca5bdbf784b8c7c7873e1fc
 CLONE="${P2A_CLONE:-/home/mohammad/prompt-to-assembly}"
 PATHS=(
-  assemblies/fmb1                          # worked example of the graph format; possible second task
+  assemblies                               # all seven; fmb1 is the worked example (same robot class as this cell)
   tasks/fmb1_assemble_ur5e_rg2_flat_gen    # template for this cell's task bundle
   prompts                                  # source for the ported prompts (EB5)
   src/prompt_to_assembly_ingest            # CAD -> assembly graph (EB2)

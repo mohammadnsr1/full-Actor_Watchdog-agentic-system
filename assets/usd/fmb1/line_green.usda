@@ -1,0 +1,80 @@
+#usda 1.0
+(
+    defaultPrim = "line_green"
+    doc = "line_green: the labmate's fmb1 Body3 (occurrence:02), FMB Board 1 at 0.7. Written by tools/build_fmb1_stage.py from the bundle named in customData; the root is this cell's prim frame, the child is fmb1's object frame."
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "line_green" (
+    customData = {
+        dictionary fmb1 = {
+            string body = "Body3"
+            string bundle = "benchmark/assemblies/fmb1/bundles/Body3.usda"
+            string bundle_sha256 = "46878c00fb64125fa434ee43fc582043afa8082ea980114ab723e1228b56bad5"
+            string occurrence = "occurrence:02"
+        }
+    }
+)
+{
+    def Xform "fmb1_occurrence_02" (
+        apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </line_green/fmb1_occurrence_02/PhysicsMaterials/printed_plastic> (
+            bindMaterialAs = "strongerThanDescendants"
+        )
+        quatd xformOp:orient = (0.7071067811865476, 0, 0, -0.7071067811865475)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Mesh "visual"
+        {
+            float3[] extent = [(-0.07, -0.01295, -0.01295), (0.07, 0.01295, 0.01295)]
+            int[] faceVertexCounts = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+            int[] faceVertexIndices = [2, 0, 1, 2, 3, 0, 6, 4, 5, 6, 7, 4, 10, 8, 9, 10, 11, 8, 14, 12, 13, 14, 15, 12, 19, 16, 17, 19, 17, 18, 20, 22, 21, 23, 22, 20]
+            point3f[] points = [(0.07, 0.01295, -0.01295), (-0.07, 0.01295, -0.01295), (-0.07, 0.01295, 0.01295), (0.07, 0.01295, 0.01295), (0.07, -0.01295, -0.01295), (0.07, 0.01295, -0.01295), (0.07, 0.01295, 0.01295), (0.07, -0.01295, 0.01295), (-0.07, -0.01295, -0.01295), (0.07, -0.01295, -0.01295), (0.07, -0.01295, 0.01295), (-0.07, -0.01295, 0.01295), (-0.07, 0.01295, -0.01295), (-0.07, -0.01295, -0.01295), (-0.07, -0.01295, 0.01295), (-0.07, 0.01295, 0.01295), (-0.07, 0.01295, 0.01295), (-0.07, -0.01295, 0.01295), (0.07, -0.01295, 0.01295), (0.07, 0.01295, 0.01295), (-0.07, -0.01295, -0.01295), (0.07, -0.01295, -0.01295), (0.07, 0.01295, -0.01295), (-0.07, 0.01295, -0.01295)]
+            uniform token subdivisionScheme = "none"
+        }
+
+        def Scope "colliders"
+        {
+            def Cube "c00" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI"]
+                customData = {
+                    dictionary assembly_ingest = {
+                        string collision_role = "general"
+                        double contact_offset_m = 0.00035000000000000135
+                        bool pad_contact = 1
+                    }
+                }
+            )
+            {
+                float physxCollision:contactOffset = 0.00035
+                float physxCollision:restOffset = 0
+                uniform token purpose = "guide"
+                double size = 1
+                quatd xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (0.14, 0.0259, 0.0259)
+                double3 xformOp:translate = (-2.698077920790726e-19, 1.5551246149137107e-19, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+
+        def "PhysicsMaterials"
+        {
+            def Material "printed_plastic" (
+                prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+            )
+            {
+                float physics:dynamicFriction = 0.6
+                float physics:restitution = 0
+                float physics:staticFriction = 0.8
+                token physxMaterial:frictionCombineMode = "average"
+                token physxMaterial:restitutionCombineMode = "min"
+            }
+        }
+    }
+}
+

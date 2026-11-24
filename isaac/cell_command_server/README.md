@@ -24,10 +24,15 @@ Start it in the GUI with `start_in_script_editor.py`, or let `isaac/headless/run
 
 Known stage facts (read from `assets/usd/assembly_room.usd` on 2026-11-11): the
 articulation root is `/World/ur5e/root_joint`, the TCP is `/World/ur5e/tcp`,
-parts are `/World/<id>`, placement frames are children of `/World/base1` and
-`/World/base2`, the finger pads are `/World/ur5e/Rg2_mn/onrobot_rg2/{left,right}_inner_finger`,
+parts are `/World/<id>`, placement frames are children of `/World/base1`, the
+finger pads are `/World/ur5e/Rg2_mn/onrobot_rg2/{left,right}_inner_finger`,
 and the saved stage still contains a stale injected prim under
-`/World/WatchdogIntruders`, which `reset` removes.
+`/World/WatchdogIntruders`, which `reset` removes. Since 2026-11-24 the only
+board on the stage is fmb1 (FMB Board 1 at 0.7): `base1`, `u_brown`,
+`u_orange`, `line_green`, `inverted_u_yellow`, built from the labmate's fmb1
+bundles by `tools/build_fmb1_stage.py` (prim frames unchanged; fmb1's object
+frame is the child `fmb1_occurrence_NN`, also on TF). The Board 2 parts
+(`base2` and its four parts) are gone.
 
 Kit-version-specific calls live only in `isaac/common/kit_api.py` (5.1 today,
 6.x path through the experimental prim API).

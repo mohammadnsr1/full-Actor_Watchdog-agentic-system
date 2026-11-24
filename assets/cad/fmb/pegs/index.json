@@ -1,0 +1,2610 @@
+{
+  "schema": "integration.step-split/1",
+  "tool": "tools/ingest/split_step.py",
+  "source": {
+    "file": "pegs.step",
+    "sha256": "b1ca6ec178920e87b0e1410aaa5a37f4d1e370ca1d6ab985630434ba5f45e8e7"
+  },
+  "label": "pegs",
+  "scale": 1.0,
+  "unit": "mm",
+  "part_frame": "axes parallel to the source frame; origin at the XY bounding-box centre, lowest z; congruent solids share their group representative's local geometry",
+  "assembly_step": null,
+  "placements_in": "the source file's frame",
+  "parts": [
+    {
+      "name": "peg_01_red",
+      "file": "peg_01_red.step",
+      "source_solid": 1,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 136524.582997,
+      "size_mm": [
+        63.6023,
+        24.4624,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        120.483705,
+        200.191105,
+        46.644903
+      ],
+      "placement": {
+        "translation_mm": [
+          120.483705,
+          200.191105,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_01_red"
+    },
+    {
+      "name": "peg_02_yellow",
+      "file": "peg_02_yellow.step",
+      "source_solid": 2,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 171430.847598,
+      "size_mm": [
+        63.36,
+        59.1157,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        28.510568,
+        187.943728,
+        34.897598
+      ],
+      "placement": {
+        "translation_mm": [
+          28.510568,
+          183.156268,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_02_yellow"
+    },
+    {
+      "name": "peg_03_red",
+      "file": "peg_03_red.step",
+      "source_solid": 3,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 84156.47215,
+      "size_mm": [
+        52.8,
+        19.8,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        321.153415,
+        89.545347,
+        45.393152
+      ],
+      "placement": {
+        "translation_mm": [
+          322.34873,
+          89.545347,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_03_red"
+    },
+    {
+      "name": "peg_04_steelblue",
+      "file": "peg_04_steelblue.step",
+      "source_solid": 4,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 97680.385469,
+      "size_mm": [
+        43.2,
+        28.8,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        322.795553,
+        24.8,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          322.8,
+          24.8,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_04_steelblue"
+    },
+    {
+      "name": "peg_05_red",
+      "file": "peg_05_red.step",
+      "source_solid": 5,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 57887.675068,
+      "size_mm": [
+        35.3537,
+        33.8502,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        16.3835,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          17.925758,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_05_red"
+    },
+    {
+      "name": "peg_06_steelblue",
+      "file": "peg_06_steelblue.step",
+      "source_solid": 6,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 64826.962808,
+      "size_mm": [
+        38.61,
+        23.166,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        72.812894,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          70.4375,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_06_steelblue"
+    },
+    {
+      "name": "peg_07_red",
+      "file": "peg_07_red.step",
+      "source_solid": 7,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 176419.184636,
+      "size_mm": [
+        45.1866,
+        51.0763,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        113.643,
+        30.6342,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          113.643,
+          30.6342,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_07_red"
+    },
+    {
+      "name": "peg_08_steelblue",
+      "file": "peg_08_steelblue.step",
+      "source_solid": 8,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 158378.555814,
+      "size_mm": [
+        49.8053,
+        32.0177,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        113.643,
+        113.643,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          113.643,
+          113.643,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_08_steelblue"
+    },
+    {
+      "name": "peg_09_brown",
+      "file": "peg_09_brown.step",
+      "source_solid": 9,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 136514.475255,
+      "size_mm": [
+        54.2915,
+        51.9825,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        30.6342,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          33.002591,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_09_brown"
+    },
+    {
+      "name": "peg_10_steelblue",
+      "file": "peg_10_steelblue.step",
+      "source_solid": 10,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 103797.442611,
+      "size_mm": [
+        40.32,
+        25.92,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        390.0,
+        92.0,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          390.0,
+          92.0,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_10_steelblue"
+    },
+    {
+      "name": "peg_11_brown",
+      "file": "peg_11_brown.step",
+      "source_solid": 11,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 127682.367919,
+      "size_mm": [
+        40.32,
+        40.32,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        159.2,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          159.2,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_11_brown"
+    },
+    {
+      "name": "peg_12_green",
+      "file": "peg_12_green.step",
+      "source_solid": 12,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 115620.830728,
+      "size_mm": [
+        36.5809,
+        41.3489,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        390.0,
+        24.8,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          390.0,
+          24.8,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_12_green"
+    },
+    {
+      "name": "peg_13_coral",
+      "file": "peg_13_coral.step",
+      "source_solid": 13,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 54412.728531,
+      "size_mm": [
+        40.1529,
+        15.4434,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        647.875188,
+        124.797762,
+        46.644903
+      ],
+      "placement": {
+        "translation_mm": [
+          647.875188,
+          124.797762,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_13_coral"
+    },
+    {
+      "name": "peg_14_coral",
+      "file": "peg_14_coral.step",
+      "source_solid": 14,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 119049.199721,
+      "size_mm": [
+        52.8,
+        49.2631,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        318.139684,
+        147.546871,
+        34.897598
+      ],
+      "placement": {
+        "translation_mm": [
+          318.139684,
+          143.557321,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_14_coral"
+    },
+    {
+      "name": "peg_15_purple",
+      "file": "peg_15_purple.step",
+      "source_solid": 15,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 94808.738192,
+      "size_mm": [
+        53.0019,
+        20.3853,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        394.783964,
+        157.753018,
+        46.644903
+      ],
+      "placement": {
+        "translation_mm": [
+          394.783964,
+          157.753018,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_15_purple"
+    },
+    {
+      "name": "peg_16_coral",
+      "file": "peg_16_coral.step",
+      "source_solid": 16,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 121185.319896,
+      "size_mm": [
+        63.36,
+        23.76,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        32.127046,
+        118.3419,
+        45.393152
+      ],
+      "placement": {
+        "translation_mm": [
+          33.561423,
+          118.3419,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_16_coral"
+    },
+    {
+      "name": "peg_17_blue",
+      "file": "peg_17_blue.step",
+      "source_solid": 17,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 48299.169049,
+      "size_mm": [
+        40.0,
+        15.0,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        592.094469,
+        73.125284,
+        45.393152
+      ],
+      "placement": {
+        "translation_mm": [
+          593.00001,
+          73.125284,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_17_blue"
+    },
+    {
+      "name": "peg_18_blue",
+      "file": "peg_18_blue.step",
+      "source_solid": 18,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 89468.257479,
+      "size_mm": [
+        43.9518,
+        42.0826,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        24.8,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          26.717337,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_18_blue"
+    },
+    {
+      "name": "peg_19_brown",
+      "file": "peg_19_brown.step",
+      "source_solid": 19,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 74808.890536,
+      "size_mm": [
+        29.4248,
+        33.26,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        648.9125,
+        16.3835,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          648.9125,
+          16.3835,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_19_brown"
+    },
+    {
+      "name": "peg_20_yellow",
+      "file": "peg_20_yellow.step",
+      "source_solid": 20,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 100193.269005,
+      "size_mm": [
+        48.0,
+        28.8,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        94.953093,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          92.0,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_20_yellow"
+    },
+    {
+      "name": "peg_21_blue",
+      "file": "peg_21_blue.step",
+      "source_solid": 21,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 149044.88967,
+      "size_mm": [
+        53.3628,
+        35.5752,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        30.628706,
+        30.6342,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          30.6342,
+          30.6342,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_21_blue"
+    },
+    {
+      "name": "peg_22_purple",
+      "file": "peg_22_purple.step",
+      "source_solid": 22,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 194823.191452,
+      "size_mm": [
+        49.8053,
+        49.8053,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        196.6518,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          196.6518,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_22_purple"
+    },
+    {
+      "name": "peg_23_green",
+      "file": "peg_23_green.step",
+      "source_solid": 23,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 152879.154324,
+      "size_mm": [
+        59.292,
+        35.5752,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        117.290808,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          113.643,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_23_green"
+    },
+    {
+      "name": "peg_24_purple",
+      "file": "peg_24_purple.step",
+      "source_solid": 24,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 67158.932117,
+      "size_mm": [
+        32.4324,
+        20.8494,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        648.9125,
+        70.4375,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          648.9125,
+          70.4375,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_24_purple"
+    },
+    {
+      "name": "peg_25_yellow",
+      "file": "peg_25_yellow.step",
+      "source_solid": 25,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 63201.079062,
+      "size_mm": [
+        34.749,
+        23.166,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        594.854923,
+        16.3835,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          594.8585,
+          16.3835,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_25_yellow"
+    },
+    {
+      "name": "peg_26_green",
+      "file": "peg_26_green.step",
+      "source_solid": 26,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 82612.935964,
+      "size_mm": [
+        32.4324,
+        32.4324,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        124.4915,
+        50.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          124.4915,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_26_green"
+    },
+    {
+      "name": "peg_27_brown",
+      "file": "peg_27_brown.step",
+      "source_solid": 27,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 68324.839142,
+      "size_mm": [
+        40.0,
+        37.3205,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        589.811339,
+        122.065832,
+        34.897598
+      ],
+      "placement": {
+        "translation_mm": [
+          589.811339,
+          119.043446,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_27_brown"
+    },
+    {
+      "name": "peg_28_steelblue",
+      "file": "peg_28_steelblue.step",
+      "source_solid": 28,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 217847.511395,
+      "size_mm": [
+        63.36,
+        59.1157,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        28.510568,
+        -87.102049,
+        53.609475
+      ],
+      "placement": {
+        "translation_mm": [
+          28.510568,
+          -91.843732,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_28_steelblue"
+    },
+    {
+      "name": "peg_29_coral",
+      "file": "peg_29_coral.step",
+      "source_solid": 29,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 204786.874495,
+      "size_mm": [
+        63.6023,
+        24.4624,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        120.483705,
+        -74.808895,
+        69.967355
+      ],
+      "placement": {
+        "translation_mm": [
+          120.483705,
+          -74.808895,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_29_coral"
+    },
+    {
+      "name": "peg_30_purple",
+      "file": "peg_30_purple.step",
+      "source_solid": 30,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 151282.994024,
+      "size_mm": [
+        52.8,
+        49.2631,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        318.139684,
+        -77.491277,
+        53.609475
+      ],
+      "placement": {
+        "translation_mm": [
+          318.139684,
+          -81.442679,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_30_purple"
+    },
+    {
+      "name": "peg_31_yellow",
+      "file": "peg_31_yellow.step",
+      "source_solid": 31,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 72448.753573,
+      "size_mm": [
+        40.0,
+        15.0,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        592.094469,
+        -106.874716,
+        68.089728
+      ],
+      "placement": {
+        "translation_mm": [
+          593.00001,
+          -106.874716,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_31_yellow"
+    },
+    {
+      "name": "peg_32_green",
+      "file": "peg_32_green.step",
+      "source_solid": 32,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 86824.49152,
+      "size_mm": [
+        40.0,
+        37.3205,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        589.811339,
+        -52.963067,
+        53.609475
+      ],
+      "placement": {
+        "translation_mm": [
+          589.811339,
+          -55.956554,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_32_green"
+    },
+    {
+      "name": "peg_33_blue",
+      "file": "peg_33_blue.step",
+      "source_solid": 33,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 100738.398175,
+      "size_mm": [
+        32.4324,
+        20.8494,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        648.9125,
+        -106.525,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          648.9125,
+          -106.525,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_33_blue"
+    },
+    {
+      "name": "peg_34_green",
+      "file": "peg_34_green.step",
+      "source_solid": 34,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 86831.512601,
+      "size_mm": [
+        35.3537,
+        33.8502,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        -160.579,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          -159.036742,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_34_green"
+    },
+    {
+      "name": "peg_35_yellow",
+      "file": "peg_35_yellow.step",
+      "source_solid": 35,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 204771.712882,
+      "size_mm": [
+        54.2915,
+        51.9825,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        -241.1208,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          -238.752409,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_35_yellow"
+    },
+    {
+      "name": "peg_36_coral",
+      "file": "peg_36_coral.step",
+      "source_solid": 36,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 223567.334505,
+      "size_mm": [
+        53.3628,
+        35.5752,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        30.628706,
+        -241.1208,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          30.6342,
+          -241.1208,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_36_coral"
+    },
+    {
+      "name": "peg_37_brown",
+      "file": "peg_37_brown.step",
+      "source_solid": 37,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 150289.903508,
+      "size_mm": [
+        48.0,
+        28.8,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        -125.046907,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          -128.0,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_37_brown"
+    },
+    {
+      "name": "peg_38_red",
+      "file": "peg_38_red.step",
+      "source_solid": 38,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 292234.787178,
+      "size_mm": [
+        49.8053,
+        49.8053,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        -75.1032,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          -75.1032,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_38_red"
+    },
+    {
+      "name": "peg_39_purple",
+      "file": "peg_39_purple.step",
+      "source_solid": 39,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 229318.731486,
+      "size_mm": [
+        59.292,
+        35.5752,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        196.6518,
+        -154.464192,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          196.6518,
+          -158.112,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_39_purple"
+    },
+    {
+      "name": "peg_40_brown",
+      "file": "peg_40_brown.step",
+      "source_solid": 40,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 94801.618593,
+      "size_mm": [
+        34.749,
+        23.166,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        594.854923,
+        -160.579,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          594.8585,
+          -160.579,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_40_brown"
+    },
+    {
+      "name": "peg_41_purple",
+      "file": "peg_41_purple.step",
+      "source_solid": 41,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 134202.386219,
+      "size_mm": [
+        43.9518,
+        42.0826,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        -195.2,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          -193.282663,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_41_purple"
+    },
+    {
+      "name": "peg_42_steelblue",
+      "file": "peg_42_steelblue.step",
+      "source_solid": 42,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 126234.708225,
+      "size_mm": [
+        52.8,
+        19.8,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        321.153415,
+        -135.454653,
+        68.089728
+      ],
+      "placement": {
+        "translation_mm": [
+          322.34873,
+          -135.454653,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_42_steelblue"
+    },
+    {
+      "name": "peg_43_yellow",
+      "file": "peg_43_yellow.step",
+      "source_solid": 43,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 142213.107288,
+      "size_mm": [
+        53.0019,
+        20.3853,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        394.783964,
+        -67.246982,
+        69.967355
+      ],
+      "placement": {
+        "translation_mm": [
+          394.783964,
+          -67.246982,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_43_yellow"
+    },
+    {
+      "name": "peg_44_brown",
+      "file": "peg_44_brown.step",
+      "source_solid": 44,
+      "colour_rgb": [
+        0.2789,
+        0.0823,
+        0.0048
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 181777.979844,
+      "size_mm": [
+        63.36,
+        23.76,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        32.127046,
+        -156.6581,
+        68.089728
+      ],
+      "placement": {
+        "translation_mm": [
+          33.561423,
+          -156.6581,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_44_brown"
+    },
+    {
+      "name": "peg_45_steelblue",
+      "file": "peg_45_steelblue.step",
+      "source_solid": 45,
+      "colour_rgb": [
+        0.3231,
+        0.552,
+        0.8148
+      ],
+      "colour_name": "steelblue",
+      "volume_mm3": 81619.092796,
+      "size_mm": [
+        40.1529,
+        15.4434,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        647.875188,
+        -55.202238,
+        69.967355
+      ],
+      "placement": {
+        "translation_mm": [
+          647.875188,
+          -55.202238,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_45_steelblue"
+    },
+    {
+      "name": "peg_46_red",
+      "file": "peg_46_red.step",
+      "source_solid": 46,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 97240.444212,
+      "size_mm": [
+        38.61,
+        23.166,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        -104.149606,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          -106.525,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_46_red"
+    },
+    {
+      "name": "peg_47_green",
+      "file": "peg_47_green.step",
+      "source_solid": 47,
+      "colour_rgb": [
+        0.0497,
+        0.5972,
+        0.0116
+      ],
+      "colour_name": "green",
+      "volume_mm3": 146520.578204,
+      "size_mm": [
+        43.2,
+        28.8,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        322.795553,
+        -195.2,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          322.8,
+          -195.2,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_47_green"
+    },
+    {
+      "name": "peg_48_coral",
+      "file": "peg_48_coral.step",
+      "source_solid": 48,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 112213.335804,
+      "size_mm": [
+        29.4248,
+        33.26,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        648.9125,
+        -160.579,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          648.9125,
+          -160.579,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_48_coral"
+    },
+    {
+      "name": "peg_49_coral",
+      "file": "peg_49_coral.step",
+      "source_solid": 49,
+      "colour_rgb": [
+        1.0,
+        0.2664,
+        0.1981
+      ],
+      "colour_name": "coral",
+      "volume_mm3": 155696.163916,
+      "size_mm": [
+        40.32,
+        25.92,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        390.0,
+        -128.0,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          390.0,
+          -128.0,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_49_coral"
+    },
+    {
+      "name": "peg_50_purple",
+      "file": "peg_50_purple.step",
+      "source_solid": 50,
+      "colour_rgb": [
+        0.2747,
+        0.0,
+        0.855
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 123919.403946,
+      "size_mm": [
+        32.4324,
+        32.4324,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        702.9665,
+        -52.471,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          702.9665,
+          -52.471,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_50_purple"
+    },
+    {
+      "name": "peg_51_blue",
+      "file": "peg_51_blue.step",
+      "source_solid": 51,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 191523.551879,
+      "size_mm": [
+        40.32,
+        40.32,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        457.2,
+        -60.8,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          457.2,
+          -60.8,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_51_blue"
+    },
+    {
+      "name": "peg_52_blue",
+      "file": "peg_52_blue.step",
+      "source_solid": 52,
+      "colour_rgb": [
+        0.013,
+        0.0685,
+        0.8388
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 264628.776954,
+      "size_mm": [
+        45.1866,
+        51.0763,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        113.643,
+        -241.1208,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          113.643,
+          -241.1208,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_52_blue"
+    },
+    {
+      "name": "peg_53_yellow",
+      "file": "peg_53_yellow.step",
+      "source_solid": 53,
+      "colour_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "colour_name": "yellow",
+      "volume_mm3": 237567.833721,
+      "size_mm": [
+        49.8053,
+        32.0177,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        113.643,
+        -158.112,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          113.643,
+          -158.112,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_53_yellow"
+    },
+    {
+      "name": "peg_54_red",
+      "file": "peg_54_red.step",
+      "source_solid": 54,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 173431.246092,
+      "size_mm": [
+        36.5809,
+        41.3489,
+        150.0
+      ],
+      "centroid_in_source_mm": [
+        390.0,
+        -195.2,
+        75.0
+      ],
+      "placement": {
+        "translation_mm": [
+          390.0,
+          -195.2,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_54_red"
+    }
+  ],
+  "files_sha256": {
+    "peg_01_red.step": "0ce0dbc11a5162b431796db1d302ddbeff59cddb1e1f8baa64bfef71d987d4c9",
+    "peg_02_yellow.step": "be0c45c06c405649e7e16627ae53bf605baf08c3b0f9a271e22d70d6ac9f9ca5",
+    "peg_03_red.step": "95556736bc376e761c0039160ea66f2d219c0ac3bfd9f570907c592c62a81c6f",
+    "peg_04_steelblue.step": "4b9dfde64a694686ef60170e38e4bf7d8adec5b2a3d126b0e143384dab7566be",
+    "peg_05_red.step": "98889a72ce2038a4bb4fe7a3fca03e6a8944ea50e00ae9866aabfa2ca1de82e3",
+    "peg_06_steelblue.step": "8313a29ac7fb2c62dd8d65b9e3344037f99d212e3d154b0c3fa3c734149bc6b2",
+    "peg_07_red.step": "1d432dc2898b6c546d7041df8ebca7be057b8810bb41eb5f8f1cb32f67905d01",
+    "peg_08_steelblue.step": "9d95e0596b1466acfa498996ebc2e4d2edfc5e958d0c42c1cadd2f1ae45d55b4",
+    "peg_09_brown.step": "ac8ab71f0636ddba0c214c7e747f45204127440249515291c37eafafea212d1d",
+    "peg_10_steelblue.step": "3f7b9e066f3d9566beed5c8082fefcad685ea7d459a740bb7657bd3407478de0",
+    "peg_11_brown.step": "a18b6ed3f222081756ce4f69e19936621128acd4da6ba0a51726a61b2bcacb7b",
+    "peg_12_green.step": "7b6c4bee67e3f0178d930a7e38f8e25364b4c213b47ea5849026d83a47672849",
+    "peg_13_coral.step": "a5f6492e261999a7169a261b58824f88f7b151da7a169082edd57588c89a5a22",
+    "peg_14_coral.step": "b6eefb5b72a3f8f3a369495ab84d0673274b5de6e0ba392e34d9d90f4c2489de",
+    "peg_15_purple.step": "f825d8f726c2add3e65829f6dc06e590b3125211bfd5fbbae7461a2b7f47e9ee",
+    "peg_16_coral.step": "1ac2ba96d23a1a0fb865d02e0a29e7fb68d8cdbc1829081e47cc73461649c58c",
+    "peg_17_blue.step": "a0400aba24279d77182b1d081de7b4d6f73359b8169acbe83d5d508f06676fb0",
+    "peg_18_blue.step": "57dd7352be10dc201577dbaf82da2fa50945b0bde740f02c398c132d738c43f5",
+    "peg_19_brown.step": "c8b64d0925e1606e98f6e2a5001c0b3fbbe3ebf0489fed26191f6e82251f98ef",
+    "peg_20_yellow.step": "53e3df3c8855a8e427f213cb51684d099bddffde981003cb44c0f144226dfcb4",
+    "peg_21_blue.step": "8ec6d52d05c7bf00373f734b27b0522e28e567e87d40145c7a12bb34092d7995",
+    "peg_22_purple.step": "71dab2ccd54af17856db292e8478ae49cd52212bdf57d4d284c6ee85b45b6c45",
+    "peg_23_green.step": "b09f25e0caa0a8f172bca5da6c457d48dafdee01d3441e9cd8c7bae35024fbed",
+    "peg_24_purple.step": "de0ba06cda7ad3f42c7a91bfbb9db45713239a9292c820b5864a7ff53f4b3f3f",
+    "peg_25_yellow.step": "8813974497e5f1dea97b9fbe2446b7ba1b1617b35659ff2a24bfe08ca65e755a",
+    "peg_26_green.step": "3fed22e82a155fca26408f517a40d70039338b4f3e6c85dba8a4d2e88dc7607d",
+    "peg_27_brown.step": "7a868e52542e1f547dedeeb39fde645aa6e47e8673200f197a1a40557cbf8f13",
+    "peg_28_steelblue.step": "089e2862327b6b4c9b92b848d3031ad811760a2e26b690bf710b24cbcab86800",
+    "peg_29_coral.step": "186ca806af855040bae6eb5ecd0fe33f0a6723bd65fb95b202cb23d4d616cb06",
+    "peg_30_purple.step": "f09029d8acbf12c43d06d94ed10a42fbbe3dd9f8b48e1d02581cd38fa66a7e54",
+    "peg_31_yellow.step": "d9302efb87e24deb39b0ceb7e6e172ec550326a6ee608e29cbe0fa127ff68d0e",
+    "peg_32_green.step": "6c4e41e5fabc45ac6f739702c38c9c48529a4387a9a0e16aaab9e0ce92a540ec",
+    "peg_33_blue.step": "832fba21a6b87523d2fc5abf6995fe4874cbc9685b23775507b88d8070386ea4",
+    "peg_34_green.step": "585a2be8035ad2d07dafa1c686941c59db681d9b5fb0038b348ad982d193fa44",
+    "peg_35_yellow.step": "2409fe3a84d6b4cdd9ba24c6e710e0660a1c73e9be735b297a8da84d1319d5f7",
+    "peg_36_coral.step": "2b135e2d74d7e39588dd15cdfc6a16111c4de088af2845a7a9660411ab5c3d10",
+    "peg_37_brown.step": "da12817a19b4c31a1e1eba6666774b12818c6ae659b3d170937019826e30310a",
+    "peg_38_red.step": "9dfd6a34382f8fc37d47a5f1f669198d979872c912704e27299bf6a76af6d4bd",
+    "peg_39_purple.step": "4b2bd862203cb3b13251a2f35188fa37060ffe0891f06c7ed2e42103da564d61",
+    "peg_40_brown.step": "ef956d22b3fa7b28ba3b84bba73befa05f0c80963ea80927a6b1732f0ae63302",
+    "peg_41_purple.step": "b259f9fbf1f6da13c2c37f0e597cd93287a81ae02c9b381db097e2a2ecce08c3",
+    "peg_42_steelblue.step": "67f41c7e5f55954ad155ff13e486e6423c6f115ff8898a5a18ea3b9ffd1959b2",
+    "peg_43_yellow.step": "dc790735cbd4db7758c383cadec060cd24b990dc95533018a51f584cac1ab85b",
+    "peg_44_brown.step": "474f7b83d677fb9745fa4affee445dc4a9dd52520bf468f304dcf7724793f8d4",
+    "peg_45_steelblue.step": "13255aad1c742da093adf38b383e1f7dd62b58c78654db879de6ced7cdc821a1",
+    "peg_46_red.step": "8c862673babf6422a6d45ce76da14c99fef792acec3d7638981e4ec0d457d0e7",
+    "peg_47_green.step": "81a092151461f4163a12d609942cb74beb4d6486820530587a455bffad168fc2",
+    "peg_48_coral.step": "bce992c46a125a9fc56a75a931818c3f7daf2a40bdb5b3d161c956c5927d29d4",
+    "peg_49_coral.step": "0c08208586db0f21bac0e17dd61543dbaa2da516b38c13683a56e7b33147f2b5",
+    "peg_50_purple.step": "4b378f1ac3768a06390c6a9f327d3e11c9d25f2c42132696eea1b3a45dc33c2f",
+    "peg_51_blue.step": "6e52237cd8436d91ea3345c058007c2a7649bd5fa62bf4263fabe44b3c117e3c",
+    "peg_52_blue.step": "19b9fec97037e91fc59cdeb9f7b4590050827bd0530bf21c739dd8ea5f5f79ed",
+    "peg_53_yellow.step": "48fb3f31b2709c4a1109887266f5d309e4aeb8362819738233fc491d62e1a67d",
+    "peg_54_red.step": "0c3ab56013026fe5ca411098f00e0960ede26521077bd67d48403bbf75713b98"
+  }
+}

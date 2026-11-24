@@ -1,0 +1,162 @@
+{
+  "schema": "integration.step-split/1",
+  "tool": "tools/ingest/split_step.py",
+  "source": {
+    "file": "peg_boards.step",
+    "sha256": "d908a44b42ad08139871096fdbc42256d8693582d1d84b467125a090ea5bb922"
+  },
+  "label": "peg_boards",
+  "scale": 1.0,
+  "unit": "mm",
+  "part_frame": "axes parallel to the source frame; origin at the XY bounding-box centre, lowest z; congruent solids share their group representative's local geometry",
+  "assembly_step": null,
+  "placements_in": "the source file's frame",
+  "parts": [
+    {
+      "name": "peg_board_01_lime",
+      "file": "peg_board_01_lime.step",
+      "source_solid": 1,
+      "colour_rgb": [
+        0.0578,
+        1.0,
+        0.0
+      ],
+      "colour_name": "lime",
+      "volume_mm3": 1889052.395472,
+      "size_mm": [
+        230.0,
+        230.0,
+        50.0
+      ],
+      "centroid_in_source_mm": [
+        114.853538,
+        149.110235,
+        23.489804
+      ],
+      "placement": {
+        "translation_mm": [
+          115.0,
+          150.0,
+          -1.5
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_board_01_lime"
+    },
+    {
+      "name": "peg_board_02_blue",
+      "file": "peg_board_02_blue.step",
+      "source_solid": 2,
+      "colour_rgb": [
+        0.0116,
+        0.0097,
+        0.7454
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 2123060.096171,
+      "size_mm": [
+        230.0,
+        230.0,
+        50.0
+      ],
+      "centroid_in_source_mm": [
+        395.874027,
+        154.887879,
+        23.490928
+      ],
+      "placement": {
+        "translation_mm": [
+          395.0,
+          155.0,
+          -1.5
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_board_02_blue"
+    },
+    {
+      "name": "peg_board_03_red",
+      "file": "peg_board_03_red.step",
+      "source_solid": 3,
+      "colour_rgb": [
+        0.956,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 2299730.071912,
+      "size_mm": [
+        230.0,
+        230.0,
+        50.0
+      ],
+      "centroid_in_source_mm": [
+        685.447685,
+        155.498259,
+        23.491625
+      ],
+      "placement": {
+        "translation_mm": [
+          685.0,
+          155.0,
+          -1.5
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "peg_board_03_red"
+    }
+  ],
+  "files_sha256": {
+    "peg_board_01_lime.step": "38ec43dcf59a3e7e1788fac63b021ba2d6ca437878db0de6233f0d76b97bc4a7",
+    "peg_board_02_blue.step": "7d5d7fe2c68612e5be28646163ce913abe67d356b85aa7a2c0e88259db3f49c4",
+    "peg_board_03_red.step": "63ef4be6fd2919c7ffb4db7b202b61eb2f0caf20370463c112a349a88fb82a99"
+  }
+}

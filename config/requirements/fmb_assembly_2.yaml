@@ -31,8 +31,7 @@ instruction_spec: |
       it is released (no in-hand slip).
     - A grasp that holds a part holds that part and not another.
     - Every object the robot is not currently moving stays where it last came
-      to rest. The other assembly's parts (BYSTANDERS below) are never moved
-      at all, so any movement of one, at any time, is a disturbance.
+      to rest.
     - No collision between a carried part and a fixture or a placed part, and
       no dropped or damaged part.
 
@@ -65,13 +64,10 @@ acceptance:
   fixtures:
     - base1
 
-# Objects that must never move during this task.
-bystanders:
-  - u_green
-  - inverted_u_brown
-  - hex_blue
-  - hex_red
-  - base2
+# Objects that must never move during this task. Empty since 2026-11-24: the
+# other FMB board's parts (u_green, inverted_u_brown, hex_blue, hex_red, base2)
+# were taken off the stage (tools/build_fmb1_stage.py).
+bystanders: []
 
 # Rendered as {{OBJECT_IDS}}.
 object_ids: |
@@ -83,21 +79,9 @@ object_ids: |
                       line_green_placement.
   base1             — the fixture. NOT graspable, never picked, must stay put.
 
-  BYSTANDERS — the other FMB assembly's objects. Present on the table for the
-  whole episode but not part of this task: never picked, placed or otherwise
-  manipulated, no placement frames. Their only requirement is that they do
-  not move; any movement of one, at any time, is a disturbance.
-
-  u_green           — other assembly's part; must not move.
-  inverted_u_brown  — other assembly's part; must not move.
-  hex_blue          — other assembly's part; must not move.
-  hex_red           — other assembly's part; must not move.
-  base2             — other assembly's fixture; not used here, must stay put.
-
-  acm_allowed_object_pairs (from get_contract) covers every pair among all
-  ten FMB objects. That is a planner collision-checking setting, not a
-  statement of permission: a carried part can be dragged through a bystander
-  without the planner objecting, and the standing stationarity requirement
-  is the bystanders' only protection. Catching that is yours alone.
+  acm_allowed_object_pairs (from get_contract) covers every pair among these
+  five objects. That is a planner collision-checking setting, not a
+  statement of permission: a carried part can be dragged through a seated
+  part without the planner objecting. Catching that is yours alone.
 
 run_notes: ""

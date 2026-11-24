@@ -1,0 +1,259 @@
+{
+  "schema": "integration.step-split/1",
+  "tool": "tools/ingest/split_step.py",
+  "source": {
+    "file": "board_2.step",
+    "sha256": "9d264b4b4250669720332821b284d46961131cc7ccb3e12244963535c7d0d055"
+  },
+  "label": "fmb_board_2",
+  "scale": 1.0,
+  "unit": "mm",
+  "part_frame": "axes parallel to the source frame; origin at the XY bounding-box centre, lowest z; congruent solids share their group representative's local geometry",
+  "assembly_step": "_assembly.step",
+  "placements_in": "the part frame of board2_base",
+  "parts": [
+    {
+      "name": "board2_base",
+      "file": "board2_base.step",
+      "source_solid": 1,
+      "colour_rgb": [
+        0.3916,
+        0.0595,
+        1.0
+      ],
+      "colour_name": "purple",
+      "volume_mm3": 2375374.13789,
+      "size_mm": [
+        230.0,
+        230.0,
+        50.0
+      ],
+      "centroid_in_source_mm": [
+        115.0,
+        115.0,
+        24.197375
+      ],
+      "placement": {
+        "translation_mm": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "board2_base"
+    },
+    {
+      "name": "board2_02_brown",
+      "file": "board2_02_brown.step",
+      "source_solid": 2,
+      "colour_rgb": [
+        0.1714,
+        0.0482,
+        0.0482
+      ],
+      "colour_name": "brown",
+      "volume_mm3": 240388.275781,
+      "size_mm": [
+        180.0,
+        30.0,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        115.0,
+        115.0,
+        71.207601
+      ],
+      "placement": {
+        "translation_mm": [
+          0.0,
+          0.0,
+          30.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "board2_02_brown"
+    },
+    {
+      "name": "board2_03_lime",
+      "file": "board2_03_lime.step",
+      "source_solid": 3,
+      "colour_rgb": [
+        0.0203,
+        0.8388,
+        0.0
+      ],
+      "colour_name": "lime",
+      "volume_mm3": 246000.0,
+      "size_mm": [
+        30.0,
+        100.0,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        115.0,
+        115.0,
+        48.963415
+      ],
+      "placement": {
+        "translation_mm": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "board2_03_lime"
+    },
+    {
+      "name": "board2_04_red",
+      "file": "board2_04_red.step",
+      "source_solid": 4,
+      "colour_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "colour_name": "red",
+      "volume_mm3": 27004.715288,
+      "size_mm": [
+        23.094,
+        20.0219,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        40.0,
+        115.0,
+        72.776356
+      ],
+      "placement": {
+        "translation_mm": [
+          -75.0,
+          0.0,
+          15.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "board2_04_red"
+    },
+    {
+      "name": "board2_05_blue",
+      "file": "board2_05_blue.step",
+      "source_solid": 5,
+      "colour_rgb": [
+        0.0176,
+        0.0,
+        0.8963
+      ],
+      "colour_name": "blue",
+      "volume_mm3": 27004.715288,
+      "size_mm": [
+        23.094,
+        20.0219,
+        100.0
+      ],
+      "centroid_in_source_mm": [
+        190.0,
+        115.0,
+        72.776356
+      ],
+      "placement": {
+        "translation_mm": [
+          75.0,
+          -0.0,
+          15.0
+        ],
+        "rotation_row_major": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "congruence_group": "board2_04_red"
+    }
+  ],
+  "files_sha256": {
+    "_assembly.step": "a05b294c78100bbac230cb8ef4de0dcc955a601c137bd2f8faa3525206c4e524",
+    "board2_02_brown.step": "591b9bc65cb232adb2a6d1c81db968d96b50e944788fa098a87ac97672e903a5",
+    "board2_03_lime.step": "fccfdc15df1a66042444997225048baf55c94eeb56f4595f9415d7f7ba5a2117",
+    "board2_04_red.step": "56e63ec7b274d9c15c5be4314bbd27f5ea224322d2f6a3c8caf54f4bf9b87aa8",
+    "board2_05_blue.step": "3a4ec54a11acb63e62bf23265d038957b0ee80215555542ab726f9b740db4e2a",
+    "board2_base.step": "df60e14df29fe4f6d7709b6744399b098a2803998e874daa9d1c39f89da41d1e"
+  }
+}
