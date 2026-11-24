@@ -1,6 +1,7 @@
 """Authoring MCP server: the tools an agent uses to write a planner.
 
     get_task()                         the task, the planner contract, where to edit
+    get_assembly_views()               pictures of the finished assembly (no poses)
     evaluate_planner(episodes, seed)   freeze a snapshot of the editable planner,
                                        run fresh episodes with it, return feedback
     read_verdict(episode_id)           the feedback for one of this session's episodes
@@ -46,15 +47,48 @@ HERE = Path(__file__).resolve().parent
 REPO = Path(os.environ.get("CELL_REPO_ROOT") or HERE.parents[1])
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "ros2_ws" / "src" / "cell_platform_interfaces"))  # pure modules only (assembly_views)
+
+
+def _append_system_dist_packages() -> None:
+    """Pillow (to downscale pictures) lives in the system Python, as for the planner."""
+    import site
+
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    for candidate in (f"/usr/local/lib/python{version}/dist-packages", "/usr/lib/python3/dist-packages", f"/usr/lib/python{version}/dist-packages"):
+        if Path(candidate).is_dir() and candidate not in sys.path:
+            site.addsitedir(candidate)
+
+
+_append_system_dist_packages()
 
 import anyio  # noqa: E402
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server.fastmcp import FastMCP, Image  # noqa: E402
+
+try:  # results carrying pictures exceed the default per-tool result cap
+    from mcp.types import ToolAnnotations  # noqa: E402
+
+    _IMAGES = ToolAnnotations(**{"anthropic/maxResultSizeChars": 4_000_000})
+except Exception:  # noqa: BLE001
+    _IMAGES = None
 
 from feedback import MODES, filter_verdict, needs_watchdog  # noqa: E402
 from runner.episode_runner.manifest import tree_hash  # noqa: E402
 from runner.jsonl import JsonlLog, read_jsonl  # noqa: E402
 
 MAX_EPISODES_PER_CALL = 3
+IMAGES_PER_EPISODE_EVAL = 2
+IMAGES_PER_EPISODE_READ = 6
+
+# A planner reaches the cell only through the contract's channels. Text that
+# would reach around them (the simulator's command server and stage file, the
+# WatchDog's camera2 and part data, the measured placements, the requirements,
+# the registry) makes evaluate_planner refuse the snapshot before any episode.
+FORBIDDEN_IN_PLANNER = (
+    "cell_command_server", "CommandServerClient", "report_poses", "contacts_poll", "9010",
+    "backends.scene", "watchdog_poses", "camera2", "assembly_room", ".usd", "pxr",
+    "config/placements", "placements.yaml", "watchdog_parts", "config/requirements", "model_registry",
+)
 CONDITIONS = ("plan_given", "plan_free")
 
 HOW_TO = {
@@ -66,8 +100,9 @@ HOW_TO = {
         "cell_backend_* sources."
     ),
     "plan_free": (
-        "The task file gives the goal, the constraints and the objects, not a plan: deciding the sequence, the "
-        "grasps, the approach and insertion motions is your job. Edit the planner in editable_planner_dir (it starts "
+        "The task file gives the goal, the constraints and the objects, not a plan, and no placement poses: where "
+        "each part goes comes from get_assembly_views (pictures of the finished assembly) and your sensors; deciding "
+        "the sequence, the grasps, the approach and insertion motions is your job. Edit the planner in editable_planner_dir (it starts "
         "as executor/planner_templates/plan_free, a skeleton that passes the gate, moves to the safe pose and stops; "
         "planner.py lists the primitives in worker.py and geometry.py). Executor-side data you may read: "
         "config/parts/executor_parts.yaml (collision shape, dimensions and grasp force per part), config/platforms/, "
@@ -158,6 +193,70 @@ def get_task() -> dict[str, Any]:
     }
 
 
+@mcp.tool(structured_output=False, annotations=_IMAGES)
+def get_assembly_views():
+    """Pictures of the FINISHED assembly from several views (with captions
+    when provided): what the parts look like once seated. They are all you
+    get about where parts go: no placement poses are published or given.
+    Call once and keep what you need."""
+    from assembly_views import load_views  # cell_platform_interfaces/assembly_views.py, pure
+
+    s = session()
+    views, info = load_views(REPO, s.assembly)
+    text = {"assembly": s.assembly, "views": [{"name": v.name, "caption": v.caption, "size": v.note} for v in views],
+            "notes": info.get("notes"), "skipped": info.get("skipped")}
+    return [json.dumps(text, indent=2)] + [Image(data=v.data, format=v.format) for v in views]
+
+
+def _template_lines() -> set[str]:
+    """Every line of the shipped templates: the lint judges only what the agent wrote."""
+    lines: set[str] = set()
+    for path in (REPO / "executor" / "planner_templates").rglob("*"):
+        if path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts:
+            lines.update(l.strip() for l in path.read_text(errors="replace").splitlines())
+    return lines
+
+
+def lint_planner(folder: Path) -> list[str]:
+    """Forbidden references the agent added to the planner: ["<file>:<line>: ..."]."""
+    shipped = _template_lines()
+    hits = []
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        if path.suffix not in (".py", ".sh", ".yaml", ".yml", ".json", ".txt", ".cfg", ".toml"):
+            continue
+        for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+            if line.strip() in shipped:
+                continue
+            for word in FORBIDDEN_IN_PLANNER:
+                if word in line:
+                    hits.append(f"{path.relative_to(folder)}:{n}: {word!r} in {line.strip()[:120]}")
+    return hits
+
+
+def _episode_images(episode_id: str, limit: int) -> list[Any]:
+    folder = REPO / "records" / episode_id / "executor" / "images"
+    paths = sorted(folder.glob("*.png"))[-limit:] if folder.is_dir() else []
+    out = []
+    for path in paths:
+        data, fmt = path.read_bytes(), "png"
+        try:
+            import io
+
+            from PIL import Image as PILImage
+
+            img = PILImage.open(io.BytesIO(data))
+            img.thumbnail((800, 800))
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG", quality=85)
+            data, fmt = buf.getvalue(), "jpeg"
+        except Exception:  # noqa: BLE001
+            pass
+        out.append((path.name, Image(data=data, format=fmt)))
+    return out
+
+
 def _run_episode(s: Session, snapshot: Path, episode_id: str, seed: int, watchdog: str) -> dict[str, Any]:
     cmd = [str(REPO / "runner" / "episode_runner" / "run.sh"), "--planner", str(snapshot), "--task", str(s.task),
            "--assembly", s.assembly, "--seed", str(seed), "--platform", s.platform, "--episode-id", episode_id,
@@ -178,17 +277,36 @@ def _run_episode(s: Session, snapshot: Path, episode_id: str, seed: int, watchdo
     return {"episode_id": episode_id, "runner_exit": rc, "wall_s": entry["wall_s"], "verdict": verdict}
 
 
-@mcp.tool()
-async def evaluate_planner(episodes: int = 1, seed: int = 0) -> dict[str, Any]:
+@mcp.tool(structured_output=False, annotations=_IMAGES)
+async def evaluate_planner(episodes: int = 1, seed: int = 0):
     """Freeze a snapshot of the editable planner and run `episodes` fresh episodes
     with it (seeds seed, seed+1, ...). Each episode resets the scene, runs
     execute_task once and is judged. Takes minutes per episode. Returns the
-    feedback for each episode."""
+    feedback for each episode, followed by the last camera1 frames your
+    planner saved in each (Worker.save_frame), newest last."""
+    result = await _evaluate(episodes, seed)
+    pictures: list[Any] = []
+    names: dict[str, list[str]] = {}
+    for ep in result.get("episodes", []) if isinstance(result, dict) else []:
+        eid = ep.get("episode_id") if isinstance(ep, dict) else None
+        for name, img in _episode_images(eid, IMAGES_PER_EPISODE_EVAL) if eid else []:
+            names.setdefault(eid, []).append(name)
+            pictures.append(img)
+    if names:
+        result["images_attached"] = names
+    return [json.dumps(result, indent=2, default=str)] + pictures
+
+
+async def _evaluate(episodes: int, seed: int) -> dict[str, Any]:
     s = session()
     if s.state["submitted"] is not None:
         return {"error": "work already submitted; this session is closed"}
     if not 1 <= int(episodes) <= MAX_EPISODES_PER_CALL:
         return {"error": f"episodes must be 1..{MAX_EPISODES_PER_CALL}"}
+    hits = lint_planner(s.planner)
+    if hits:
+        return {"error": "the planner references what it may not use (docs/PLANNER_CONTRACT.md section 4); no episode was run",
+                "references": hits[:40]}
     mode = _feedback_mode()
     n = len(s.state["evaluations"]) + 1
     snapshot = s.dir / "snapshots" / f"{n:03d}"
@@ -215,10 +333,19 @@ async def evaluate_planner(episodes: int = 1, seed: int = 0) -> dict[str, Any]:
     return {"evaluation": n, "snapshot": str(snapshot), "feedback_mode": mode, "episodes": feedback}
 
 
-@mcp.tool()
-def read_verdict(episode_id: str) -> dict[str, Any]:
+@mcp.tool(structured_output=False, annotations=_IMAGES)
+def read_verdict(episode_id: str):
     """The feedback for one episode of this session (filtered by the cell's
-    executor_feedback setting), plus the tail of your planner's own log."""
+    executor_feedback setting), the tail of your planner's own log, and the
+    last camera1 frames your planner saved in it."""
+    out = _read_verdict(episode_id)
+    pictures = _episode_images(episode_id, IMAGES_PER_EPISODE_READ) if "error" not in out else []
+    if pictures:
+        out["images_attached"] = [n for n, _ in pictures]
+    return [json.dumps(out, indent=2, default=str)] + [img for _, img in pictures]
+
+
+def _read_verdict(episode_id: str) -> dict[str, Any]:
     s = session()
     if episode_id not in s.episode_ids():
         return {"error": f"{episode_id!r} is not an episode of this session", "episodes": s.episode_ids()}

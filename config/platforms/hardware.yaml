@@ -49,6 +49,9 @@ topics:
 
 motion:
   kind: follow_joint_trajectory
+  # The planning group the planning service plans for (the SRDF group ending at the TCP).
+  # TODO(mohammad): the group name in the UR7e MoveIt config (ur_moveit_config uses ur_manipulator).
+  planning_group: ur_manipulator
   controller: ur_robot_driver
   # TODO(mohammad): confirm the controller on the installed driver branch:
   # scaled_joint_trajectory_controller (driver default, respects the pendant

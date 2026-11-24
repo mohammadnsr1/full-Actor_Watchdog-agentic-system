@@ -302,3 +302,25 @@ class PartDetector:
                         st.approaching.discard(feature)
                         st.engaged.discard(feature)
         return events
+
+
+def object_id_for_prim(prim_path: str, known_ids: set[str]) -> str:
+    """The known part id a contact body belongs to: the deepest path component
+    of the prim (e.g. /World/u_brown/mesh/collider -> u_brown) that is a known
+    id; the raw path when none is."""
+    for part in reversed([c for c in str(prim_path).split("/") if c]):
+        if part in known_ids:
+            return part
+    return str(prim_path)
+
+
+def contact_event(event: str, pad: str, body: str, impulse: float, on_pad_surface: bool,
+                  known_ids: set[str], t_ns: int) -> Event | None:
+    """A pad contact report (cell_planner_msgs/PadContact, source contact_report)
+    as contact_made / contact_lost over [pad, object]."""
+    kind = {"found": "contact_made", "lost": "contact_lost"}.get(str(event))
+    if kind is None:
+        return None
+    obj = object_id_for_prim(body, known_ids)
+    detail = f"pad {pad} {event} {obj}; peak impulse {impulse:.4g}; on pad surface: {bool(on_pad_surface)}"
+    return Event(kind, [pad, obj], "contact_report", 1.0, float(impulse), detail, t_ns)

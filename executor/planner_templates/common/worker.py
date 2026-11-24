@@ -58,6 +58,18 @@ class Worker:
         self.cb = ReentrantCallbackGroup()
         backend_pkg = {"sim": "cell_backend_sim", "hardware": "cell_backend_hw"}[self.platform.name]
         self.backends = importlib.import_module(backend_pkg).build_backends(self.node, self.platform, self.cb, self.cell)
+        # Not the planner's: the scene backend is the harness's (reset, ground
+        # truth) and camera2 poses are the WatchDog's channel.
+        for name in ("scene", "watchdog_poses"):
+            try:
+                getattr(self.backends, name).shutdown()
+            except Exception:
+                pass
+            setattr(self.backends, name, None)
+        self._cam: dict[str, Any] = {}
+        self._cam_lock = threading.Lock()
+        self._tf = None
+        self._saved = 0
 
         from cell_planner_msgs.msg import ExecutorFact, WatchdogNotice
         from cell_planner_msgs.srv import PlanCartesian, PlanToJoints, PlanToPose
@@ -78,8 +90,7 @@ class Worker:
         self.tip = str(self.platform.get("frames", "tcp"))
         self.arm_joints = list(self.platform.joints("arm"))
         self.home = dict(self.platform.get_optional("scene", "home_joint_positions", default={}) or {})
-        # The SRDF planning group; the platform config has no key for it yet.
-        self.group = "ur_manipulator"
+        self.group = str(self.platform.get("motion", "planning_group"))
 
         self.executor = MultiThreadedExecutor(num_threads=4)
         self.executor.add_node(self.node)
@@ -149,7 +160,7 @@ class Worker:
     # -- poses ---------------------------------------------------------------------
 
     def pose(self, object_id: str, max_age_s: float = 2.0, wait_s: float = 5.0) -> dict[str, Any]:
-        from task import obs_pose
+        from geometry import obs_pose
 
         deadline = time.monotonic() + wait_s
         while True:
@@ -159,6 +170,101 @@ class Worker:
             if time.monotonic() > deadline:
                 raise StepFailed(f"no pose for {object_id!r} on the executor pose channel")
             time.sleep(0.1)
+
+    # -- camera1 (the executor's wrist camera) -------------------------------------
+
+    def _camera_subscribe(self) -> None:
+        from rclpy.qos import qos_profile_sensor_data
+        from sensor_msgs.msg import CameraInfo, Image
+
+        def keep(key: str):
+            def cb(msg: Any) -> None:
+                with self._cam_lock:
+                    self._cam[key] = msg
+            return cb
+
+        for key, typ in (("rgb", Image), ("depth", Image), ("camera_info", CameraInfo)):
+            self.node.create_subscription(typ, self.platform.camera_topic("camera1", key), keep(key), qos_profile_sensor_data,
+                                          callback_group=self.cb)
+        import tf2_ros
+
+        self._tf = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf, self.node)
+
+    def camera1(self, wait_s: float = 3.0) -> dict[str, Any]:
+        """The latest camera1 frame: {"rgb": HxWx3 uint8, "depth": HxW float32
+        metres (NaN where none), "K": 3x3 intrinsics, "width", "height",
+        "frame_id" (the optical frame), "stamp_s", "world_T_camera": pose dict
+        of the optical frame in the world (z forward, x right, y down)}."""
+        import numpy as np
+
+        if self._tf is None:
+            self._camera_subscribe()
+        deadline = time.monotonic() + wait_s
+        while True:
+            with self._cam_lock:
+                rgb, depth, info = self._cam.get("rgb"), self._cam.get("depth"), self._cam.get("camera_info")
+            if rgb is not None and info is not None:
+                break
+            if time.monotonic() > deadline:
+                raise StepFailed("no camera1 image (is camera1 enabled and publishing?)")
+            time.sleep(0.05)
+        enc = rgb.encoding.lower()
+        ch = {"rgb8": 3, "bgr8": 3, "rgba8": 4, "bgra8": 4}.get(enc)
+        if ch is None:
+            raise StepFailed(f"camera1 rgb encoding {rgb.encoding!r} not handled")
+        img = np.frombuffer(bytes(rgb.data), dtype=np.uint8).reshape(rgb.height, rgb.step // ch if rgb.step else rgb.width, ch)[:, : rgb.width, :3]
+        if enc.startswith("bgr"):
+            img = img[:, :, ::-1]
+        out: dict[str, Any] = {"rgb": np.ascontiguousarray(img), "K": np.array(info.k, dtype=float).reshape(3, 3),
+                               "width": int(rgb.width), "height": int(rgb.height), "frame_id": rgb.header.frame_id,
+                               "stamp_s": rgb.header.stamp.sec + rgb.header.stamp.nanosec * 1e-9, "depth": None, "world_T_camera": None}
+        if depth is not None:
+            denc = depth.encoding.lower()
+            if denc == "32fc1":
+                d = np.frombuffer(bytes(depth.data), dtype=np.float32).reshape(depth.height, depth.width).astype(np.float32)
+            elif denc in ("16uc1", "mono16"):
+                d = np.frombuffer(bytes(depth.data), dtype=np.uint16).reshape(depth.height, depth.width).astype(np.float32) / 1000.0
+                d[d == 0] = np.nan
+            else:
+                d = None
+            out["depth"] = d
+        try:
+            from rclpy.time import Time
+
+            tf = self._tf.lookup_transform(self.world, rgb.header.frame_id, Time())
+            t, r = tf.transform.translation, tf.transform.rotation
+            out["world_T_camera"] = {"position": {"x": t.x, "y": t.y, "z": t.z}, "orientation": {"x": r.x, "y": r.y, "z": r.z, "w": r.w},
+                                     "frame_id": self.world}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("camera1 pose not available: %s", exc)
+        return out
+
+    def save_frame(self, label: str, frame: dict[str, Any] | None = None) -> str | None:
+        """Save a camera1 frame (default: a fresh one) into the episode's
+        executor/images/: <n>_<label>.png (RGB) and .npy (depth). The authoring
+        agent sees the last saved PNGs of each episode in its feedback."""
+        import os
+        import re
+
+        import numpy as np
+        from robot_backend.utils.png_encode import encode_png
+
+        episode = os.environ.get("CELL_EPISODE_DIR")
+        if not episode:
+            return None
+        frame = frame or self.camera1()
+        folder = os.path.join(episode, "executor", "images")
+        os.makedirs(folder, exist_ok=True)
+        self._saved += 1
+        stem = os.path.join(folder, f"{self._saved:03d}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', label)[:60]}")
+        rgb = frame["rgb"]
+        with open(stem + ".png", "wb") as fh:
+            fh.write(encode_png(np.ascontiguousarray(rgb).tobytes(), rgb.shape[1], rgb.shape[0], "rgb8"))
+        if frame.get("depth") is not None:
+            np.save(stem + ".npy", frame["depth"])
+        log.info("saved camera1 frame %s.png", stem)
+        return stem + ".png"
 
     # -- planning and motion ---------------------------------------------------------
 

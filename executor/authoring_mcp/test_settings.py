@@ -34,4 +34,6 @@ def test_both_conditions_hide_records_and_shell():
         deny = load(name)["permissions"]["deny"]
         assert "Read(./records/**)" in deny and "Bash" in deny
         assert "Edit(./executor/planner_templates/**)" in deny
+        for path in ("./config/placements/**", "./assets/**", "./isaac/**"):
+            assert f"Read({path})" in deny, (name, path)
         assert not any(r.startswith(("Glob(", "Write(")) for r in deny + load(name)["permissions"]["allow"]), name

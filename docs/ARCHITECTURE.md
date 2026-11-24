@@ -195,6 +195,8 @@ See `docs/INDEPENDENCE.md` for each channel and where it is cut.
 | `config/tasks/` | executor task files (full and plan-free) | planner, authoring MCP |
 | `config/requirements/` | what the WatchDog judges against | WatchDog server, runner's checker |
 | `config/parts/` | executor and WatchDog part data, generated from `robot_backend/config/model_registry.yaml` by `tools/split_registry.py` | planner; WatchDog; checker |
+| `config/placements/<assembly>.yaml` | each placement frame relative to the fixture (measured once); WatchDog side only | WatchDog pose source, `cell_physical_events`, runner checker |
+| `config/assembly_views/<assembly>/` | pictures of the finished assembly | both agents (`get_assembly_views`, `assembly_reference`) |
 | `config/layouts/<assembly>/` | reset poses per layout | Isaac command server |
 | `config/mcp/`, `config/settings/` | per-role MCP configs and permissions | `run_authoring.sh`, `run_episode.py`, `run_watchdog.sh` |
 | `agents/` | WatchDog prompt templates and agent config; `agent_harness/` renders them | `role_context.py` in the WatchDog server |

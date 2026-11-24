@@ -28,18 +28,31 @@ class PadContactsRelay(Node):
         self.pub = self.create_publisher(PadContact, self.platform.topic("pad_contacts"), 50)
         self.last_seq = 0
         rate = float(self.platform.get("scene", "contacts_poll_hz"))
-        enabled = self.client.call("contacts_enable", enable=True)
-        if not enabled.get("ok"):
-            raise RuntimeError(f"contacts_enable failed: {enabled.get('error')}")
+        # Started with the cell bringup, possibly before Isaac's command server
+        # is up, and kept across a server restart (stage reload): contact
+        # reports are (re-)enabled whenever they are not, from the poll timer.
+        self.enabled = False
         from rclpy.clock import Clock, ClockType
 
         self.timer = self.create_timer(1.0 / rate, self._poll, clock=Clock(clock_type=ClockType.SYSTEM_TIME))
-        self.get_logger().info(f"relaying pad contacts from {self.client.host}:{self.client.port} to {self.pub.topic_name} (pads {enabled.get('pads')})")
+        self.get_logger().info(f"relaying pad contacts from {self.client.host}:{self.client.port} to {self.pub.topic_name}")
+
+    def _enable(self) -> bool:
+        resp = self.client.call("contacts_enable", enable=True)
+        if resp.get("ok"):
+            self.enabled, self.last_seq = True, 0
+            self.get_logger().info(f"contact reports enabled (pads {resp.get('pads')})")
+        else:
+            self.get_logger().warning(f"waiting for the command server: contacts_enable: {resp.get('error')}", throttle_duration_sec=10.0)
+        return self.enabled
 
     def _poll(self) -> None:
+        if not self.enabled and not self._enable():
+            return
         resp = self.client.call("contacts_poll", since_seq=self.last_seq)
         if not resp.get("ok"):
-            self.get_logger().warning(f"contacts_poll: {resp.get('error')}", throttle_duration_sec=5.0)
+            self.get_logger().warning(f"contacts_poll: {resp.get('error')}; re-enabling", throttle_duration_sec=5.0)
+            self.enabled = False
             return
         for e in resp.get("events", []):
             self.last_seq = max(self.last_seq, int(e.get("seq", 0)))

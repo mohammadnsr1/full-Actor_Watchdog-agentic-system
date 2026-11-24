@@ -8,8 +8,10 @@ Inputs, each used only when the platform's `signals` block says it exists:
     (poses.watchdog_topic)  workspace_object_appeared; source = ground_truth
                             or camera2_pose per poses.source
     robot TF (frames.tcp)   the TCP position for hold/release
-    pad contacts            TODO(mohammad), Milestone 6: contact_report source;
-                            when it exists the effort proxy is not used
+    pad contacts            contact_made / contact_lost over [pad, object]
+    (topics.pad_contacts)   from the simulator's pad contact reports, source
+                            contact_report; when available the effort proxy
+                            is not used
 Thresholds: config/cell.yaml `physical_events`. Parts and feature frames:
 config/parts/watchdog_parts.yaml. Both files are the node's only inputs
 besides the platform config; nothing about the executor or the plan.
@@ -29,7 +31,7 @@ from cell_platform_interfaces.platform_config import load_cell_yaml, load_platfo
 from cell_platform_interfaces.signals import status_of
 from cell_platform_interfaces.timebase import wall_ns, wall_time_iso
 from cell_platform_interfaces.topic_poses import TopicPoseSource
-from cell_physical_events.detectors import EffortDetector, MotionDetector, PartDetector, PoseSample
+from cell_physical_events.detectors import EffortDetector, MotionDetector, PartDetector, PoseSample, contact_event
 
 
 def _load_parts(path: Path) -> tuple[dict[str, dict[str, str]], set[str]]:
@@ -73,10 +75,18 @@ class PhysicalEventsNode(Node):
         for reason in [self.motion.disabled_reason()] + self.effort.disabled_reasons() + self.parts.disabled_reasons():
             if reason:
                 self.get_logger().warning(f"detector disabled: {reason}")
+        self._known_ids = set(parts) | set(frames)
         if contacts_available:
-            self.get_logger().warning("pad_contacts is declared available but the contact_report subscriber is TODO(mohammad) (Milestone 6)")
+            from cell_planner_msgs.msg import PadContact
 
-        self.poses = TopicPoseSource(self, self.platform.get("poses", "watchdog_topic"), camera="camera2", source=self.pose_source_label)
+            self._contacts_sub = self.create_subscription(PadContact, self.platform.topic("pad_contacts"), self._on_pad_contact, 50)
+
+        from cell_platform_interfaces.placements import load_placements
+
+        # Feature (placement) frames derived from the fixture's camera2 pose
+        # (config/placements/); nothing publishes them.
+        self.poses = TopicPoseSource(self, self.platform.get("poses", "watchdog_topic"), camera="camera2", source=self.pose_source_label,
+                                     placements=load_placements(self.platform.repo_root))
         self._js_sub = self.create_subscription(JointState, self.platform.topic("joint_states"), self._on_joint_state, 50)
         self._sim_time_s = 0.0
         if self.platform.has("topics", "clock"):
@@ -121,6 +131,11 @@ class PhysicalEventsNode(Node):
             if j < len(msg.effort):
                 events += self.effort.feed(float(msg.effort[j]), t)
         for ev in events:
+            self._publish(ev)
+
+    def _on_pad_contact(self, msg: Any) -> None:
+        ev = contact_event(msg.event, msg.pad, msg.body, float(msg.impulse), bool(msg.on_pad_surface), self._known_ids, wall_ns())
+        if ev is not None:
             self._publish(ev)
 
     def _tcp_position(self) -> tuple[float, float, float] | None:

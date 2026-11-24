@@ -17,6 +17,12 @@ Jazzy):
 The pipeline name (ground_truth, foundationpose, ...) is not in the message;
 it comes from the platform config `poses.source` and is stamped on every
 observation so a verdict can say where its evidence came from.
+
+placements (WatchDog side only, cell_platform_interfaces.placements): placement
+frames derived from their fixture's observation in the same message, with the
+fixture's confidence, source and stamp. Published samples under a placement id
+are ignored, so the result is the same whether or not the simulator publishes
+placement frames. The executor's camera1 source is built without placements.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ class TopicPoseSource(PoseSource):
         source: str,
         callback_group: Any = None,
         qos_depth: int = 10,
+        placements: dict[str, Any] | None = None,
     ) -> None:
         from vision_msgs.msg import Detection3DArray
 
@@ -45,6 +52,7 @@ class TopicPoseSource(PoseSource):
         self.topic = topic
         self._camera = camera
         self._source = source
+        self._placements = dict(placements or {})
         self._lock = threading.Lock()
         self._latest: dict[str, PoseObservation] = {}
         self._recv_ns: dict[str, int] = {}
@@ -82,6 +90,18 @@ class TopicPoseSource(PoseSource):
                 camera=self._camera,
                 header_stamp_ns=header_ns,
                 wall_time_iso=stamp_iso,
+            )
+        for frame_id in self._placements:
+            fresh.pop(frame_id, None)
+        for frame_id, pl in self._placements.items():
+            fx = fresh.get(pl.fixture)
+            if fx is None:
+                continue
+            p, q = pl.world(fx.position, fx.orientation_xyzw)
+            fresh[frame_id] = PoseObservation(
+                object_id=frame_id, frame_id=fx.frame_id, position=p, orientation_xyzw=q,
+                confidence=fx.confidence, source=fx.source, camera=fx.camera,
+                header_stamp_ns=fx.header_stamp_ns, wall_time_iso=fx.wall_time_iso,
             )
         with self._lock:
             self._message_count += 1

@@ -24,6 +24,7 @@ connects: `docs/ARCHITECTURE.md`.
 | Synchronisation | One start permission per episode, held by the runner: it starts the WatchDog, waits for its `signal_ready` (`cell_orchestrator`, `phase="run"`, up to `watchdog.ready_timeout_s`), then starts the planner; budgets start there. No planner gate. Episodes declared to the orchestrator (`episode_id` resets readiness and abort; `guard_mode` unguarded without a WatchDog, so no wait). WatchDog prompt: prepare from the requirements and the physics before ready, then wake on physics only. |
 | WatchDog roles | Prompt rewritten around three roles: conformance and safety; risk analysis (halt only for damage risk, repetition included, or unrecoverability; failed attempts are exploration); free-form consultation (`issue_consultation`), which reaches the running planner when consult is on (`w.consultations()`) and the authoring agent in its feedback (`watchdog_to_executor`). An `escalate` ruling in `halt_enabled` mode ends the episode. |
 | Executor prompt | `executor/prompts/authoring_system.md` + `condition_<condition>.md`, appended by `run_authoring.sh` (`--append-system-prompt-file`); copy in `records/authoring/<session>/system_prompt.md`. |
+| Where parts go | Placement frames derived from the fixture (`config/placements/`, `tools/measure_placements.py`) for the WatchDog, `cell_physical_events` and the checker; `assembly_reference` (WatchDog) and `get_assembly_views` (executor) serve the pictures in `config/assembly_views/<assembly>/`; camera1 RGB-D in the worker (`camera1()`, `save_frame()`), saved frames in the authoring feedback; plan-free leak guards (runner check, settings, worker, lint). `cell_physical_events` turns pad contacts into `contact_made` / `contact_lost`. |
 | Thresholds | Starting `physical_events` and `health` values in `config/cell.yaml`, measured from the r3 bag (all detectors now on). |
 | Prune | The v1 executor stack, the S3 WatchDog session, unused assets and configs, and tests of v1 code that is not in this repo (list in `docs/PROVENANCE.md`, Milestone 7). |
 
@@ -39,6 +40,19 @@ Episodes run before the prune and the JSONL change: `records/m7-first-s0-r3`
 (template, all 12 steps executed, 79 s sim; checker: only inverted_u_yellow
 placed, base1 moved 6.5 mm; the straight-line inserts of line_green and
 inverted_u_yellow disturbed the seated parts).
+
+## Before the next tests: placements and pictures
+
+1. With the cell up and Isaac still publishing the placement frames:
+
+   ```bash
+   python3 tools/measure_placements.py fmb_assembly_2 --dry-run   # look at it
+   python3 tools/measure_placements.py fmb_assembly_2
+   ```
+
+   Writes `config/placements/fmb_assembly_2.yaml` (fixture-relative; WatchDog side).
+2. Put the pictures of the finished assembly in `config/assembly_views/fmb_assembly_2/` (see its README).
+3. For plan-free runs, stop publishing the placement frames from Isaac. The runner refuses a plan-free episode if any is still visible to the executor.
 
 ## What you run to check Milestone 7 (sim)
 
@@ -92,13 +106,9 @@ experiment: an agent writes its own planner and the harness evaluates it.
 - cuRobo: `cell_planning_curobo` is written but not installed
   (`planner.curobo.python` is `TODO(mohammad)`; separate venv per its
   `INSTALL.md`). Every episode so far planned with MoveIt.
-- `executor/workspace/authoring-tooltest/` and its records predate the
-  condition layout; delete them when convenient.
 - Plan-free sessions can read other plan-free sessions' planners (a deny
   would also cover their own); clear `executor/workspace/plan_free/` between
   sessions that must be independent.
-- `worker.py` plans for the group `ur_manipulator` by literal; it should come
-  from the platform config before hardware.
 
 ## Milestone 6 record
 

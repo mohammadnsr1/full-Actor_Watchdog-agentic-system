@@ -455,6 +455,31 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         before = rn.backends.scene.report_poses().data.get("poses") or {}
 
+        # Placements come from config/placements/<assembly>.yaml relative to the
+        # fixture (cell_platform_interfaces.placements), not from published frames.
+        from cell_platform_interfaces.placements import derive_into, load_placements
+
+        placements = load_placements(REPO, args.assembly)
+        manifest["inputs"]["placements"] = file_record(REPO / "config" / "placements" / f"{args.assembly}.yaml", REPO)
+        derive_into(before, placements)
+
+        # A plan-free task must not see where parts go: no placement frame may
+        # be visible on the executor's pose topic (camera1).
+        task_doc = yaml.safe_load(task_path.read_text()) or {}
+        if not task_doc.get("steps"):
+            stage(verdict, "placement_leak_check")
+            frames = [str(spec.get("placement_frame")) for spec in ((requirements.get("acceptance") or {}).get("parts") or {}).values() if spec]
+            deadline = time.monotonic() + 3.0
+            seen: list[str] = []
+            while time.monotonic() < deadline and not seen:
+                seen = [f for f in frames if rn.backends.executor_poses.latest(f, max_age_s=2.0) is not None]
+                time.sleep(0.2)
+            verdict["placement_leak_check"] = {"frames": frames, "visible_to_executor": seen}
+            if seen:
+                verdict.update(reason=f"plan-free task, but placement frames are published on the executor's pose topic: {seen} "
+                                      "(stop publishing them from Isaac)")
+                return 2
+
         if not args.no_record:
             rec = EpisodeRecording(str(ep), platform, cell).start()
         base_env = {**os.environ, "CELL_PLATFORM": args.platform, "CELL_REPO_ROOT": str(REPO),
@@ -510,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
 
         stage(verdict, "check")
         after = rn.backends.scene.report_poses().data.get("poses") or {}
+        verdict["placements_derived"] = derive_into(after, placements)
         verdict["checker"] = checker.check(requirements, wd_parts, before, after)
         p = verdict["planner"]
         if p.get("outcome") == "protocol_error":

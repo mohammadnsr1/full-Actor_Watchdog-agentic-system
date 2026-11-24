@@ -18,8 +18,14 @@ What is already here (docs/PLANNER_CONTRACT.md):
 
 Primitives (worker.py, the ROS side; every name from the platform config):
 
-    w.pose(id)                 latest world pose of a part or a placement
-                               frame from the executor camera (camera1)
+    w.pose(id)                 latest world pose of a part or the fixture
+                               from the executor camera (camera1); no
+                               placement poses are published
+    w.camera1()                the wrist camera's latest frame: rgb (HxWx3),
+                               depth (HxW metres), K (intrinsics), and
+                               world_T_camera (the optical frame's pose)
+    w.save_frame(label)        save a camera1 frame to the episode record;
+                               the authoring agent sees the last ones
     w.plan_to_pose(p, v, a)    free-space plan to a TCP pose (planning service)
     w.plan_straight(p, v, a)   straight-line Cartesian plan to a TCP pose
     w.plan_home(v, a)          plan to the platform's safe joint pose

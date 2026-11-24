@@ -33,7 +33,7 @@ from cell_platform_interfaces.platform_config import load_platform_config
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--goal", nargs=6, type=float, required=True, help="six joint positions (rad)")
-    parser.add_argument("--group", default="ur_manipulator")
+    parser.add_argument("--group", default="", help="default: the platform config motion.planning_group")
     parser.add_argument("--cancel-after", type=float, default=0.6, help="seconds after the goal is sent")
     parser.add_argument("--no-cancel", action="store_true")
     args = parser.parse_args()
@@ -53,7 +53,7 @@ def main() -> int:
             print(f"planning service {ns}/plan_to_joints not available", file=sys.stderr)
             return 2
         req = PlanToJoints.Request()
-        req.planning_group = args.group
+        req.planning_group = args.group or str(platform.get("motion", "planning_group"))
         req.joint_names = platform.joints("arm")
         req.joint_positions = list(args.goal)
         future = client.call_async(req)

@@ -65,9 +65,16 @@
       "Read(./.git/**)",
       "Grep(./.git/**)",
       "Read(./executor/prompts/condition_plan_given.md)",
-      "Grep(./executor/prompts/condition_plan_given.md)"
+      "Grep(./executor/prompts/condition_plan_given.md)",
+      "Read(./config/placements/**)",
+      "Grep(./config/placements/**)",
+      "Read(./assets/**)",
+      "Grep(./assets/**)",
+      "Read(./isaac/**)",
+      "Grep(./isaac/**)"
     ]
   },
   "_condition_comment": "CONDITION plan_free (runner/run_authoring.sh --condition plan_free): the agent gets only the goal, constraints and object descriptions (config/tasks/<assembly>.plan_free.yaml via get_task) and the part data, and starts from executor/planner_templates/plan_free, a skeleton with no assembly logic. Identical to the plan_given settings plus read denies on every place the plan, or the v1 executor's pick/place know-how, is written: the task files (the full one carries steps and offsets), the plan_given template and sessions, tools/pick_check.py, robot_backend's test plans (grasp offsets per part), skills and executor MCP servers, and .git. Other plan_free sessions under executor/workspace/plan_free/ stay readable (a deny would also cover the agent's own).",
-  "_rules_comment": "Path rules: Read(path) also covers Glob and Grep, Edit(path) also covers Write; Claude Code ignores Glob(path) and Write(path) rules and warns about them."
+  "_rules_comment": "Path rules: Read(path) also covers Glob and Grep, Edit(path) also covers Write; Claude Code ignores Glob(path) and Write(path) rules and warns about them.",
+  "_placements_comment": "Milestone 7: where parts go is never the executor's to read. config/placements/ (fixture-relative placements, WatchDog side), assets/ (the simulator stage, which holds the placement prims) and isaac/ (the command server) are denied; evaluate_planner also refuses a planner that references them (executor/authoring_mcp lint)."
 }

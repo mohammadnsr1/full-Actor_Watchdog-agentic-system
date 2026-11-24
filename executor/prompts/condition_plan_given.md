@@ -7,3 +7,5 @@ planner (`executor/planner_templates/plan_given`) executes those steps as
 written. The plan is a starting point, not a guarantee: it may be wrong or
 imprecise, and the episodes will show where. You may change how the planner
 uses it, correct its numbers in your planner, or depart from it entirely.
+In this condition the placement frames the steps name are published as poses
+on the executor camera's channel (`w.pose("<part>_placement")`).

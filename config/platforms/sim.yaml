@@ -45,6 +45,8 @@ topics:
 
 motion:
   kind: follow_joint_trajectory
+  # The planning group the planning service plans for (the SRDF group ending at the TCP).
+  planning_group: ur_manipulator
   controller: isaac_trajectory_bridge
   action: /arm_controller/follow_joint_trajectory
   # rclpy's action cancel service for the action above. The bridge accepts

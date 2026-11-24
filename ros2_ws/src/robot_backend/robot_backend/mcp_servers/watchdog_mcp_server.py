@@ -3053,6 +3053,58 @@ if mcp is not None:
         except Exception as exc:
             return _error(command, exc, halt_id=halt_id, ruling=ruling)
 
+    @mcp.tool(structured_output=False, annotations=_IMAGE_RESULT_ANNOTATIONS)
+    def assembly_reference():
+        """What the finished assembly is: every acceptance part's final
+        location, and pictures of the finished assembly.
+
+        placements: for each part, its placement frame's pose RELATIVE TO THE
+        FIXTURE (fixed for the assembly, measured once) and, when your camera
+        sees the fixture now, that placement's current world pose. Placement
+        frames are never observed: they are always derived from the fixture's
+        camera2 pose and these offsets, which is also how get_contract,
+        inspect_acceptance and your monitors see them.
+
+        The pictures (any number of views, possibly with captions) show the
+        finished assembly; the executor is given the same pictures and no
+        placement poses. Call once and keep what you need.
+        """
+        command = "assembly_reference"
+        try:
+            import json
+
+            from cell_platform_interfaces.assembly_views import load_views
+            from mcp.server.fastmcp import Image
+            from robot_backend.cell_config import platform as _platform
+
+            ctx = _ensure_watchdog()
+            req = _requirements(ctx)
+            assembly = str(req.get("name") or "")
+            placements = getattr(ctx.recorder, "placements", {}) or {}
+            parts = (req.get("acceptance") or {}).get("parts") or {}
+            table = {}
+            for pid, spec in parts.items():
+                frame = str((spec or {}).get("placement_frame", ""))
+                pl = placements.get(frame)
+                entry: dict[str, Any] = {"placement_frame": frame}
+                if pl is None:
+                    entry["relative_to_fixture"] = None
+                    entry["note"] = "no measured placement for this frame (config/placements/); its acceptance cannot be judged"
+                else:
+                    entry["fixture"] = pl.fixture
+                    entry["relative_to_fixture"] = {"position_m": list(pl.position), "orientation_xyzw": list(pl.orientation_xyzw)}
+                    obs = ctx.recorder.pose_source.latest(frame, max_age_s=2.0)
+                    entry["world_now"] = None if obs is None else {"position_m": list(obs.position), "orientation_xyzw": list(obs.orientation_xyzw),
+                                                                   "frame_id": obs.frame_id, "derived_from": pl.fixture}
+                table[pid] = entry
+            views, info = load_views(_platform().repo_root, assembly)
+            text = {"ok": True, "command": command, "assembly": assembly, "fixtures": (req.get("acceptance") or {}).get("fixtures"),
+                    "placements": table, "views": [{"name": v.name, "caption": v.caption, "size": v.note} for v in views],
+                    "views_notes": info.get("notes"), "views_skipped": info.get("skipped")}
+            return [json.dumps(text, indent=2)] + [Image(data=v.data, format=v.format) for v in views]
+        except Exception as exc:
+            return _error(command, exc)
+
     @mcp.tool()
     def issue_consultation(
         text: str,

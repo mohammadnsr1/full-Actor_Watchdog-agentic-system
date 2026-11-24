@@ -360,7 +360,7 @@ def main() -> int:
     ap.add_argument("--step", action="append", help="step_id to run (repeatable); default every pick_* step")
     ap.add_argument("--assembly", default="fmb_assembly_2")
     ap.add_argument("--layout", default="nominal")
-    ap.add_argument("--planning-group", default="ur_manipulator")
+    ap.add_argument("--planning-group", default="", help="default: the platform config motion.planning_group")
     ap.add_argument("--vel", type=float, default=0.2, help="velocity/acceleration scaling")
     ap.add_argument("--dry-run", action="store_true", help="compute poses and plan the pre-grasp only; nothing moves")
     args = ap.parse_args()
@@ -390,7 +390,7 @@ def main() -> int:
     node = Node("pick_check")
     results: list[dict[str, Any]] = []
     try:
-        cell = Cell(node, platform, args.planning_group, args.vel)
+        cell = Cell(node, platform, args.planning_group or str(platform.get("motion", "planning_group")), args.vel)
         for step in steps:
             print(f"\n== {step['step_id']} ({step['object_id']}){' [dry run]' if args.dry_run else ''}")
             try:

@@ -684,3 +684,20 @@ Method: an import closure (Python `ast`, lazy imports included) from everything 
 ### Edited
 
 `robot_backend/{__init__.py, skills/__init__.py, mcp_servers/__init__.py}` (docstrings), `robot_backend/setup.py`, `runner/run_watchdog.sh`, `config/mcp/watchdog.hardware.mcp.json`, `runner/recorder/episode_recording.py` (stderr as JSONL), comments that pointed at removed files (`utils/geometry.py`, `tools/pick_check.py`, `cell_orchestrator`, `rg2_controller.py`, `config/requirements/fmb_assembly_2.yaml`), `docs/PLATFORMS.md`.
+
+### Milestone 7, 2026-11-23: start permission, WatchDog roles, consultation, executor prompt
+
+No files copied from WATCHDOG or DROIDSTACK. All written from scratch:
+
+- New: `executor/prompts/{authoring_system.md, condition_plan_given.md, condition_plan_free.md}` (the executor agent's system prompt, appended by `run_authoring.sh`); `ros2_ws/src/cell_orchestrator/test/test_episode_start.py`; `ros2_ws/src/robot_backend/test/test_consultation.py`.
+- `cell_orchestrator/node.py` (WATCHDOG-derived): `episode_id` parameter (a new id clears run-scoped state) and the `phase="run"` start gate released by run-scope readiness alone. The v1 step/phase gates are kept, unused.
+- WATCHDOG-derived files edited: `watchdog_mcp_server.py` (`issue_consultation`; `abort_run` described as refusing the start), `watchdog/rulings.py` (`validate_consultation`, `publish_consultation`), `events/schema.py` (`ConsultationPayload`, event type `consultation`), `agents/prompts/watchdog_system_plan_blind.txt` (three roles; halting for damage risk or unrecoverability only; how an episode runs; consultation), `agents/prompts/watchdog_task_plan_blind.txt`.
+- `cell_planner_msgs/msg/WatchdogNotice.msg`: kind `consultation`, fields `part`, `measurements_json`.
+- `runner/episode_runner/run_episode.py`: declares the episode to the orchestrator, holds the start permission, collects the WatchDog's halts, rulings and consultations, ends the episode on an `escalate` ruling in `halt_enabled` mode. `executor/authoring_mcp/feedback.py`: `watchdog_to_executor`.
+- Planner templates: no gate; `Worker.consultations()`; planning group from `motion.planning_group` (new key in both platform configs).
+- `cell_backend_sim/pad_contacts_relay.py` waits for the command server and re-enables after a reload; started by `sim_moveit_bringup` (`start_pad_contacts`).
+- `config/cell.yaml`: `watchdog.ready_timeout_s`; starting `physical_events` and `health` values, measured from `records/m7-first-s0-r3/bag` (values and what they rest on are in the file's comments).
+
+### Milestone 7, 2026-11-23 (later): where parts go, executor vision
+
+Written from scratch, nothing copied: `cell_platform_interfaces/{placements.py, assembly_views.py}` and `test/test_placements.py`; `tools/measure_placements.py`; `config/assembly_views/fmb_assembly_2/README.md`; `executor/planner_templates/common/test_worker_camera.py`; `executor/authoring_mcp/test_lint.py`. Edited: `TopicPoseSource` (derived placements), WATCHDOG-derived `watchdog/recorder.py` and `watchdog_mcp_server.py` (`assembly_reference`), `cell_physical_events` (derived placements; pad contacts as `contact_made`/`contact_lost`), the runner (derived placements for the checker, plan-free placement check), the worker (drops scene and camera2, `camera1()`, `save_frame()`, `obs_pose` from `geometry.py`), the authoring server (`get_assembly_views`, frames in feedback, `lint_planner`), executor settings, prompts, `tools/derive_plan_free_task.py` (placement sentences redacted).

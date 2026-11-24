@@ -5,7 +5,9 @@ report_poses), independently of both the planner's claim and the WatchDog:
 
     parts       each acceptance part (config/requirements/<assembly>.yaml
                 acceptance.parts) is at its placement frame within the part's
-                registry tolerances (position_m, orientation_deg)
+                registry tolerances (position_m, orientation_deg); the runner
+                derives the placement frames from the fixture's reported pose
+                (config/placements/, cell_platform_interfaces.placements)
     fixtures    acceptance.fixtures did not move (disturbance tolerance)
     bystanders  bystanders did not move (their disturbance_tolerance_m)
 

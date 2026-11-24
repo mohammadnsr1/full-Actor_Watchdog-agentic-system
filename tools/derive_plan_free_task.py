@@ -35,6 +35,17 @@ REDACT = {
         ("instruction_spec",
          "grasped securely on the way there: measured width at\n    plateau matched the step's grasp_width_m within tolerance; no slippage in hand;",
          "grasped securely on the way there: no slippage in hand;"),
+        # Milestone 7: no placement frames are published in the plan-free
+        # condition; where parts go comes from the reference views.
+        ("instruction_spec",
+         "Its destinations are published\nas TF frames, queried live rather than hardcoded:\nu_brown_placement, u_orange_placement,\nline_green_placement, inverted_u_yellow_placement.",
+         "Where each part goes on it is shown\nin the pictures of the finished assembly (get_assembly_views)."),
+        ("instruction_spec",
+         "matches its placement frame within",
+         "matches its place in the finished assembly within"),
+        ("object_ids",
+         "Placement destinations are published as TF frames and queried like object\nposes: u_brown_placement, inverted_u_yellow_placement, u_orange_placement,\nline_green_placement. They are pose-only markers, not collision geometry, and\nthey move with the fixture -- which is why they are queried rather than\nhardcoded. This task uses no reorient frames.",
+         "Where each part goes is shown in the pictures of the finished assembly\n(get_assembly_views); no placement poses are published. This task uses no\nreorient frames."),
     ],
 }
 

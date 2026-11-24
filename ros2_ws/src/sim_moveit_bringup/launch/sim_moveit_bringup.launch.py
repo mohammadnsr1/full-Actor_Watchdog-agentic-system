@@ -441,6 +441,21 @@ def _launch_setup(context):
             if _is_truthy(LaunchConfiguration("start_physical_events").perform(context))
             else [LogInfo(msg="cell_physical_events not started (start_physical_events=false)")]
         ),
+        # Pad contacts (Milestone 6): polls Isaac's command server for the RG2
+        # pads' contact reports and publishes topics.pad_contacts. Waits for
+        # the server and re-enables after a stage reload on its own.
+        *(
+            [
+                Node(
+                    package="cell_backend_sim",
+                    executable="pad_contacts_relay",
+                    name="pad_contacts_relay",
+                    output="screen",
+                )
+            ]
+            if _is_truthy(LaunchConfiguration("start_pad_contacts").perform(context))
+            else [LogInfo(msg="pad_contacts_relay not started (start_pad_contacts=false)")]
+        ),
         # The cell's timing interlock. Cell infrastructure, not agent
         # infrastructure -- it comes up with the cell so the monitoring agent
         # and executor can be started independently afterward without either
@@ -592,6 +607,11 @@ def generate_launch_description():
                 "use_sim_time",
                 default_value="true",
                 description="Use simulation time from Isaac /clock.",
+            ),
+            DeclareLaunchArgument(
+                "start_pad_contacts",
+                default_value="true",
+                description="Start cell_backend_sim pad_contacts_relay (/cell/pad_contacts from the Isaac command server).",
             ),
             DeclareLaunchArgument(
                 "start_physical_events",

@@ -25,6 +25,27 @@ the robot yourself. Your planner does, in episodes the harness runs for you.
    it, or when you give up: what it does, what you changed and why, what still
    fails.
 
+## What you can see
+
+- **The finished assembly**: `get_assembly_views` returns pictures of it from
+  several views. Together with the part data (shapes and dimensions in
+  `config/parts/executor_parts.yaml`) they are what tells you where each part
+  goes and how it sits.
+- **At run time, your planner's sensors**: part and fixture poses from the
+  executor camera (`w.pose(id)`), the wrist camera's colour and depth images
+  with intrinsics and the camera's pose in the world (`w.camera1()`), joint
+  states, the gripper's width and grasp result. Use them to locate the
+  fixture and its slots and to check what happened.
+- **After an episode**: the camera1 frames your planner saved
+  (`w.save_frame(label)`) come back to you as pictures with the feedback
+  (the last few per episode). Save frames at the moments you want to see:
+  before and after a grasp, at the approach, after an insertion.
+
+Whether placement poses are given depends on your condition (below). Do not
+look for them elsewhere: the simulator's files and services and the
+WatchDog's data are closed to you, and `evaluate_planner` refuses a planner
+that references them.
+
 ## You are expected to explore
 
 You will not get the assembly right the first time. Try approaches, measure

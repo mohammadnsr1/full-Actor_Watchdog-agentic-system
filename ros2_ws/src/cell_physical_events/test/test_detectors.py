@@ -78,3 +78,15 @@ def test_part_lift_approach_engage_release_settle():
     extra = {"mystery": PoseSample("mystery", (0.5, 0.5, 0), 0.9, "ground_truth", 6 * S)}
     assert tick((1.0, 0, 0.0), (1.0, 0, 0.5), 6 * S, extra) == ["workspace_object_appeared"]
     assert tick((1.0, 0, 0.0), (1.0, 0, 0.5), 7 * S, extra) == []
+
+
+def test_pad_contact_reports_become_contact_events():
+    from cell_physical_events.detectors import contact_event, object_id_for_prim
+
+    known = {"u_brown", "base1", "u_brown_placement"}
+    assert object_id_for_prim("/World/u_brown/geometry/collider", known) == "u_brown"
+    assert object_id_for_prim("/World/ur5e/left_inner_finger", known) == "/World/ur5e/left_inner_finger"
+    ev = contact_event("found", "left", "/World/u_brown/mesh", 0.12, True, known, 5)
+    assert (ev.kind, ev.scene_ids, ev.source, ev.value) == ("contact_made", ["left", "u_brown"], "contact_report", 0.12)
+    assert contact_event("lost", "right", "/World/base1", 0.0, False, known, 6).kind == "contact_lost"
+    assert contact_event("persist", "right", "/World/base1", 0.0, False, known, 7) is None

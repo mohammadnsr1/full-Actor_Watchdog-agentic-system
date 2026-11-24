@@ -47,9 +47,16 @@
       "CronCreate",
       "ListMcpResourcesTool",
       "ReadMcpResourceTool",
-      "ReadMcpResourceDirTool"
+      "ReadMcpResourceDirTool",
+      "Read(./config/placements/**)",
+      "Grep(./config/placements/**)",
+      "Read(./assets/**)",
+      "Grep(./assets/**)",
+      "Read(./isaac/**)",
+      "Grep(./isaac/**)"
     ]
   },
   "_condition_comment": "CONDITION plan_given (runner/run_authoring.sh --condition plan_given): the agent gets the full task file, steps included, and starts from executor/planner_templates/plan_given. The plan_free settings are these rules plus extra read denies; executor/authoring_mcp/test_settings.py checks that.",
-  "_rules_comment": "Path rules: Read(path) also covers Glob and Grep, Edit(path) also covers Write; Claude Code ignores Glob(path) and Write(path) rules and warns about them."
+  "_rules_comment": "Path rules: Read(path) also covers Glob and Grep, Edit(path) also covers Write; Claude Code ignores Glob(path) and Write(path) rules and warns about them.",
+  "_placements_comment": "Milestone 7: where parts go is never the executor's to read. config/placements/ (fixture-relative placements, WatchDog side), assets/ (the simulator stage, which holds the placement prims) and isaac/ (the command server) are denied; evaluate_planner also refuses a planner that references them (executor/authoring_mcp lint)."
 }

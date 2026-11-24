@@ -405,8 +405,15 @@ class EvidenceRecorder:
         p = _platform()
         source_label = str(p.get("poses", "source"))
         self._pose_source_name = "ground_truth" if source_label == "ground_truth" else "camera2_pose"
+        # Placement frames are derived from the fixture's observed pose and the
+        # assembly's fixture-relative placements (config/placements/), never
+        # read from a published frame (cell_platform_interfaces.placements).
+        from cell_platform_interfaces.placements import load_placements
+
+        self.placements = load_placements(p.repo_root)
         self.pose_source = TopicPoseSource(
-            node, p.get("poses", "watchdog_topic"), camera="camera2", source=self._pose_source_name
+            node, p.get("poses", "watchdog_topic"), camera="camera2", source=self._pose_source_name,
+            placements=self.placements,
         )
         self._timer = node.create_timer(1.0 / TF_SAMPLE_HZ, self._on_tf_timer)
 

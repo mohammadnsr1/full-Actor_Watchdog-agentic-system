@@ -28,6 +28,7 @@ def test_plan_free_carries_no_plan():
         for leak in ("grasp_center_offset", "target_offset", "approach_distance_m", "lift_height_m"):
             assert leak not in text
         orig = yaml.safe_load(full.read_text(encoding="utf-8"))
-        assert free["object_ids"] == orig["object_ids"]
-        for ref in ("grasp_width_m", "the step's"):
+        assert free["object_ids"].splitlines()[0] == orig["object_ids"].splitlines()[0]
+        for ref in ("grasp_width_m", "the step's", "TF frame", "_placement"):
             assert ref not in free["instruction_spec"], ref
+        assert "_placement" not in free["object_ids"] and "TF frame" not in free["object_ids"]

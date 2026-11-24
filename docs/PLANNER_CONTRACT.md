@@ -74,7 +74,8 @@ service, frame or joint name literal.
 | Motion, gripper | `cell_backend_<platform>.build_backends(node, platform)`: `backends.motion.execute(trajectory)`, `backends.gripper.open() / close(force) / set_width(w, force) / read()` |
 | Executor poses (camera1) | `backends.executor_poses.latest(object_id)`: parts and placement frames, `vision_msgs/Detection3DArray` on `poses.executor_topic` |
 | Planning | the planning service under `services.planning_namespace`: `plan_to_pose`, `plan_to_joints`, `plan_cartesian`, `check_trajectory`, collision objects |
-| Executor data | the task file named by `task_ref` (section 1), `config/parts/executor_parts.yaml` (geometry, grasp force) |
+| Executor data | the task file named by `task_ref` (section 1), `config/parts/executor_parts.yaml` (geometry, grasp force), `config/assembly_views/<assembly>/` (pictures of the finished assembly) |
+| camera1 images | `platform.camera_topic("camera1", rgb / depth / camera_info)`; the templates' `Worker.camera1()` (RGB, depth in metres, intrinsics, the optical frame's world pose) and `Worker.save_frame(label)` (into `$CELL_EPISODE_DIR/executor/images/`, returned to the authoring agent with the feedback) |
 | WatchDog notices | `topics.watchdog_notices` (`WatchdogNotice`), only when `config/cell.yaml watchdog.consult` is true: `halt` and the `ruling` that answers it, and `consultation` (section 6) |
 | Physical events | `topics.physical_events` (read only) |
 
@@ -85,6 +86,8 @@ service, frame or joint name literal.
 - Anything WatchDog-side: `config/requirements/`, `config/parts/watchdog_parts.yaml`,
   `topics.watchdog_events`, the WatchDog session directory, the recorder.
 - Publishing on `topics.watchdog_notices` or `topics.physical_events`.
+- The scene backend and the simulator's command server, the stage files (`assets/`), camera2 (the WatchDog's camera and pose topic), `config/placements/`, the requirements, the WatchDog part data and the registry. `evaluate_planner` refuses a planner that references any of them (`executor/authoring_mcp/server.py lint_planner`), and the templates' worker drops the scene and camera2 backends.
+- Placement poses in the plan-free condition: none are published, and the runner refuses a plan-free episode (invalid) if any placement frame is visible on the executor's pose topic.
 - Files outside `$CELL_EPISODE_DIR/executor/` (and its own directory).
 
 ## 5. What the planner must report: the fact journal
