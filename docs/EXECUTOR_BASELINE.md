@@ -138,10 +138,42 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
   - The labmate's resolver composes part-graph features (STEP frame) with
     occurrence placements (centroid frame), which reads as 16.7 mm off for Body1
     features; to verify before the prompts point the agent at `frame()`/`locate()`.
-  - Physics choices still open: base1 is dynamic here, kinematic in their cell; the
-    table has no physics material here (0.8/0.6 in theirs), so part-on-table
-    friction is now about 0.65 (was 1.0 with our old 1.0/1.0 max material);
-    speculative CCD is not enabled. Pads stay 1.0 (max wins).
+  - Physics: the table has no physics material here (0.8/0.6 in theirs), so
+    part-on-table friction is about 0.65 (was 1.0 with our old 1.0/1.0 max
+    material). Pads stay 1.0 (max wins). (base1 kinematic and speculative CCD:
+    settled below.)
+- **fmb1-given-s0 (first episode on the fmb1 stage, 2026-11-24): 0/4, then fixed
+  offline.** The old stage's `m7-given-s0` placed 3/4 with the same plan. From the
+  bag (`/tf`, `/camera1/poses`, the real collider boxes placed at the recorded poses):
+  1. `u_brown` reached the slot 0.6 / 1.6 mm off in x / y (the slot gives about
+     ±1.4 mm) and landed on base1's top face 31 mm above the seat, the fingers
+     sliding down it; it fell in on release. The old SDF colliders (rounded at
+     256 voxels, 1 mm contact offset) funnelled such errors in; the boxes do not.
+  2. `place_approach_u_orange` has its `target_offset` commented out in
+     `config/tasks/fmb_assembly_2.yaml`, so its "approach" is a free-space move to
+     the seat itself; the hanging part swept into the seated `u_brown` (it did in
+     `m7-given-s0` too, by 1.4 mm), twisted 13 deg in the hand and jammed at 37 deg,
+     pushing base1 21 mm.
+  3. `line_green` came to rest on the jammed `u_orange`; the `inverted_u_yellow`
+     insert pressed into the pile and PhysX resolved the box overlap by throwing
+     `line_green` 4.9 m (no depenetration velocity cap).
+  4. Every part hung 6-15 mm further along the TCP's Z than the RG2 model in
+     `robot_backend.utils.rg2_geometry` puts it (6.5 mm at 20 mm jaw width, 9.8 at
+     25.8, 12.7 at 42.7; the steps' `grasp_width_m` is not the closed width), so the
+     planned inserts aimed that far below the seat: the template pressed parts into
+     the base, which is also why base1 moved in the old runs.
+
+  Fixed (Mohammad: "both"): stage `CELL_PHYSICS` in `tools/build_fmb1_stage.py`
+  (`--cell-physics`: maxDepenetrationVelocity 0.5 m/s and speculative CCD on the five
+  parts, base1 kinematic), `kit_api` writes no velocity to kinematic bodies; the
+  plan-given template hovers `hover_height_m` (0.10) above the approach pose and
+  descends straight, and before each descent measures the part in the hand
+  (`Worker.tcp_pose()` + the pose channel, arm at rest) and targets the TCP so the
+  part lands on the target, stopping if the part moved >10 mm / 15 deg since the
+  grasp. Offline: a fake-worker run lands all four parts exactly; tests 483 pass.
+  Still open: the commented `u_orange` approach offset (Mohammad's task file, left
+  as is; the hover covers it); the RG2 model's 6-15 mm (pick targets use it too);
+  placements 1-6.55 mm above the seats now mean a drop of that much at release.
 - `tasks/fmb_assembly_2/task.yaml` in their schema, the subset this cell uses:
   roles, starting scene, goal target, `mate_realization` (all physical-only),
   tolerances, layouts (regions anchored on our table, base1 static, seeded

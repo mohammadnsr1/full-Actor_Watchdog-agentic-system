@@ -25,6 +25,7 @@ def _worker(rgb, depth, info):
     w._cam = {"rgb": rgb, "depth": depth, "camera_info": info}
     w._cam_lock = threading.Lock()
     w._tf = _NoTF()
+    w._cam_subscribed = True
     w.world = "world"
     w._saved = 0
     return w

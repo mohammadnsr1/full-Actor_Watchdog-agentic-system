@@ -76,6 +76,7 @@ service, frame or joint name literal.
 | Planning | the planning service under `services.planning_namespace`: `plan_to_pose`, `plan_to_joints`, `plan_cartesian`, `check_trajectory`, collision objects |
 | Executor data | the task file named by `task_ref` (section 1), `config/parts/executor_parts.yaml` (geometry, grasp force), `config/assembly_views/<assembly>/` (pictures of the finished assembly) |
 | camera1 images | `platform.camera_topic("camera1", rgb / depth / camera_info)`; the templates' `Worker.camera1()` (RGB, depth in metres, intrinsics, the optical frame's world pose) and `Worker.save_frame(label)` (into `$CELL_EPISODE_DIR/executor/images/`, returned to the authoring agent with the feedback) |
+| TCP pose | TF `frames.world` -> `frames.tcp` (robot_state_publisher on joint states; `world -> base_link` is static); the templates' `Worker.tcp_pose()`. With a part pose from the executor channel, taken with the arm at rest, it gives the part's pose in the hand (the plan-given template inserts with it) |
 | WatchDog notices | `topics.watchdog_notices` (`WatchdogNotice`), only when `config/cell.yaml watchdog.consult` is true: `halt` and the `ruling` that answers it, and `consultation` (section 6) |
 | Physical events | `topics.physical_events` (read only) |
 

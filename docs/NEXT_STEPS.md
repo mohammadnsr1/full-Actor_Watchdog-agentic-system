@@ -9,31 +9,42 @@ connects: `docs/ARCHITECTURE.md`.
   like the labmate's prompt-to-assembly workspace. Plan, decisions and phases
   EB1-EB8: `docs/EXECUTOR_BASELINE.md`. EB1 (`benchmark/`, git-ignored) done; FMB CAD split
   per part in `assets/cad/fmb/`; fmb_assembly_2 turned out to be the labmate's
-  fmb1 (FMB Board 1 at 0.7). Next in EB2: the fmb1 -> stage binding.
+  fmb1 (FMB Board 1 at 0.7). EB2: fmb1 is on the stage (Board 2 removed);
+  first episode on it failed, fixed offline, live re-check below.
 - M1 to M6: done and checked (M6 live checks below).
 - M7 sim side: built and unit-tested here; the live checks below are next.
   Nothing since your last commit is committed. Hardware side of M7 follows.
 
 ## Live check: fmb1 on the stage (2026-11-24)
 
-The stage now holds only fmb1 (FMB Board 1 at 0.7), built from the labmate's
-bundles; Board 2 is gone (`docs/EXECUTOR_BASELINE.md`, EB2). Checked offline;
-these need the cell:
+Steps 1-5 done 2026-11-24. Steps 1-4 passed (verify_reset errors under 0.02 mm).
+Step 5 episode `records/fmb1-given-s0` failed 0/4 (the old stage's `m7-given-s0`
+placed 3/4): diagnosis and fixes in `docs/EXECUTOR_BASELINE.md`, "fmb1-given-s0".
 
-1. Open `assets/usd/assembly_room.usd` (GUI or headless). Expect the five parts
-   where they were, in their colours, no payload errors, no Board 2 parts.
-2. Play. Expect the parts to settle without jumping (the colliders are now boxes,
-   0.35 mm contact offset, instead of SDF meshes).
-3. `ros2 run tf2_ros tf2_echo world fmb1_occurrence_01`: the new fmb1 frames are on
-   TF (`fmb1_occurrence_00` to `_04`), beside the unchanged part frames.
-4. Command server `load_layout` + `verify_reset` with the nominal layout: Expect
-   all five parts verified.
-5. `python3 tools/pick_check.py` and one plan-given episode
-   (`runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id fmb1-given-s0`):
-   grasps and inserts with the new colliders, mass (1250 kg/m^3) and friction
-   (part 0.8/0.6 average; on the table about 0.65 now).
+## Live check: after the fmb1-given-s0 fixes (2026-11-24)
 
-If anything is wrong, the previous stage is the committed one: `git checkout assets/usd/assembly_room.usd`.
+Changed offline since fmb1-given-s0: the stage (`base1` kinematic, depenetration
+capped at 0.5 m/s, speculative CCD on the five parts), `isaac/common/kit_api.py`
+(no velocity writes on kinematic bodies), the plan-given template (hover, then
+straight descent; in-hand correction before each descent) and `Worker.tcp_pose()`.
+
+1. Reopen `assets/usd/assembly_room.usd` (it changed on disk; do not save the open
+   copy over it), Play, then run `isaac/cell_command_server/start_in_script_editor.py`
+   again (it reloads `kit_api`). Expect `base1` not to move at all, even when pushed.
+2. `load_layout` + `verify_reset` (nominal, seed 0): all pass, no PhysX errors about
+   velocities on a kinematic body in the Isaac console.
+3. One plan-given episode:
+   `runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id fmb1-given-s1`.
+   Expect in `executor/planner.jsonl`: per place step a `hover` then a straight
+   `approach`, and `in hand: X mm ... from the planned grasp; Y mm ... since the grasp`
+   lines (X was 6-15 mm in fmb1-given-s0; Y should stay under ~2 mm). Expect in the
+   verdict: base1 `moved_m` 0; no part thrown. Parts are now released at their
+   placement frames, which are 1-6.55 mm above fmb1's seats, so they drop that far.
+   If a step stops with "moved in the hand since the grasp", the part was knocked
+   in the gripper; send the episode folder.
+
+If anything is wrong: the stage before these physics edits is commit d5f2263
+(`git checkout d5f2263 -- assets/usd/assembly_room.usd`); before fmb1 it is cd4d6c7.
 
 ## What Milestone 7 added
 

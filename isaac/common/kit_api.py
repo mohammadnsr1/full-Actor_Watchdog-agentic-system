@@ -199,6 +199,13 @@ def is_rigid_body(path: str) -> bool:
     return prim.IsValid() and prim.HasAPI(UsdPhysics.RigidBodyAPI)
 
 
+def is_kinematic(path: str) -> bool:
+    """A kinematic rigid body (fmb1's base1 since 2026-11-24): PhysX moves it only when told,
+    and refuses velocities on it, so teleport and zero_velocities leave its velocity alone."""
+    attr = stage().GetPrimAtPath(path).GetAttribute("physics:kinematicEnabled")
+    return bool(attr and attr.Get())
+
+
 # -- prims: teleport, velocities, joints (version-adapted) ---------------------
 
 
@@ -217,12 +224,13 @@ def teleport(path: str, position: Sequence[float], orientation_xyzw: Sequence[fl
     pos = np.array([list(position)], dtype=np.float32)
     quat = np.array([_xyzw_to_wxyz(orientation_xyzw)], dtype=np.float32)
     rigid = is_rigid_body(path)
+    dynamic = rigid and not is_kinematic(path)
     if prims_api_name().endswith("experimental.prims"):
         from isaacsim.core.experimental.prims import RigidPrim, XformPrim
 
         prim = RigidPrim(path) if rigid else XformPrim(path)
         prim.set_world_poses(positions=pos, orientations=quat)
-        if rigid:
+        if dynamic:
             zeros = np.zeros((1, 3), dtype=np.float32)
             prim.set_velocities(linear_velocities=zeros, angular_velocities=zeros)
     else:
@@ -230,14 +238,14 @@ def teleport(path: str, position: Sequence[float], orientation_xyzw: Sequence[fl
 
         prim = RigidPrim(path) if rigid else XFormPrim(path)
         prim.set_world_poses(positions=pos, orientations=quat)
-        if rigid:
+        if dynamic:
             prim.set_velocities(np.zeros((1, 6), dtype=np.float32))
 
 
 def zero_velocities(path: str) -> None:
     import numpy as np
 
-    if not is_rigid_body(path):
+    if not is_rigid_body(path) or is_kinematic(path):
         return
     if prims_api_name().endswith("experimental.prims"):
         from isaacsim.core.experimental.prims import RigidPrim

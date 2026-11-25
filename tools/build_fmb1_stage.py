@@ -6,7 +6,7 @@ Run with Isaac Sim's own USD (0.24.5), so the stage is written by the library th
 reads it, not by a newer usd-core:
 
     L=$(ls -d ~/isaacsim/extscache/omni.usd.libs-*)
-    PYTHONPATH=$L LD_LIBRARY_PATH=$L/bin ~/isaacsim/python.sh tools/build_fmb1_stage.py [--check-only]
+    PYTHONPATH=$L LD_LIBRARY_PATH=$L/bin ~/isaacsim/python.sh tools/build_fmb1_stage.py [--check-only | --cell-physics]
 
 Prim names and prim frames stay as they are, so every pose, placement, grasp offset
 and mesh in the configs keeps its meaning. For each Board 1 prim in
@@ -20,11 +20,14 @@ assets/usd/fmb1/binding.json it:
      the prim's colour from /World/Looks.
 Then it deletes the Board 2 prims and their reorient frames, and sets the TF publisher's
 targets: Board 2 targets out, the five fmb1 frames in (published as fmb1_occurrence_NN).
+Last it authors CELL_PHYSICS (below); --cell-physics does only that, on a stage that
+already carries the fmb1 parts.
 
 Checks (always, and alone with --check-only): every part's visual mesh lands in world
 where the old mesh was (max vertex distance), collider boxes cover the mesh box, mass
 props equal the bundle's, no rigid body is nested, no Board 2 prim or target is left,
-every TF target resolves. Writes the measured numbers into binding.json.
+every TF target resolves, CELL_PHYSICS is in place. Writes the measured numbers into
+binding.json.
 """
 import argparse
 import hashlib
@@ -46,6 +49,25 @@ BOARD2 = ["u_green", "base2", "hex_blue", "hex_red", "inverted_u_brown",
 MASS_ATTRS = ("physics:mass", "physics:centerOfMass", "physics:diagonalInertia", "physics:principalAxes")
 SOLVER_ATTRS = ("physxRigidBody:sleepThreshold", "physxRigidBody:solverPositionIterationCount",
                 "physxRigidBody:solverVelocityIterationCount")
+# This cell's settings on top of the bundles' (2026-11-24, after records/fmb1-given-s0, where
+# an insert pressed into a jammed pile and box-collider overlap was resolved by throwing
+# line_green 4.9 m, and base1 slid and turned at every insert):
+#   maxDepenetrationVelocity  PhysX's default is unlimited for practical purposes (the labmate's
+#                             launcher records 3 m/s from the schema); 0.5 m/s, as PhysX's SDF
+#                             troubleshooting advises and the labmate's launcher does for threads
+#   enableSpeculativeCCD      the labmate's fmb1 regime plans speculative CCD for moving parts
+#   base1 kinematic           the fixture is held: in fmb1 the base is the fixed reference
+CELL_PHYSICS = {
+    "*": {"physxRigidBody:maxDepenetrationVelocity": (Sdf.ValueTypeNames.Float, 0.5),
+          "physxRigidBody:enableSpeculativeCCD": (Sdf.ValueTypeNames.Bool, True)},
+    "base1": {"physics:kinematicEnabled": (Sdf.ValueTypeNames.Bool, True)},
+}
+
+
+def cell_physics_for(name):
+    out = dict(CELL_PHYSICS["*"])
+    out.update(CELL_PHYSICS.get(name, {}))
+    return out
 
 
 def quat_from_R(R):
@@ -233,6 +255,17 @@ def edit_stage(lay, binding, bundle_root_attrs):
     return len(old), len(rel.targetPathList.explicitItems)
 
 
+def apply_cell_physics(lay, binding):
+    """Author CELL_PHYSICS on the stage root layer's part prims (idempotent)."""
+    for name in binding["parts"]:
+        spec = lay.GetPrimAtPath(f"/World/{name}")
+        if spec is None:
+            sys.exit(f"/World/{name} not in the stage root layer")
+        for attr, (type_name, value) in cell_physics_for(name).items():
+            set_attr(spec, attr, type_name, value)
+    return {name: {a: v for a, (_, v) in cell_physics_for(name).items()} for name in binding["parts"]}
+
+
 def check(stage_path, binding, old_world=None, bundle_root_attrs=None):
     names = list(binding["parts"])
     st = open_parts_stage(stage_path, names)
@@ -286,6 +319,11 @@ def check(stage_path, binding, old_world=None, bundle_root_attrs=None):
             scale = max(abs(I_expect[i][j]) for i in range(3) for j in range(3))
             if r["inertia_max_abs_diff"] > 1e-6 * scale:            # float32 storage of the quaternion
                 problems.append(f"{name}: inertia off by {r['inertia_max_abs_diff']:.3e}")
+        for attr, (_, value) in cell_physics_for(name).items():
+            got = root.GetAttribute(attr).Get() if root.GetAttribute(attr) else None
+            if got is None or (abs(got - value) > 1e-6 if isinstance(value, float) else got != value):
+                problems.append(f"{name}: {attr} = {got}, want {value}")
+        r["cell_physics"] = {a: root.GetAttribute(a).Get() for a in cell_physics_for(name)}
         nested = [str(d.GetPath()) for d in Usd.PrimRange(root)
                   if d != root and "PhysicsRigidBodyAPI" in d.GetAppliedSchemas()]
         if nested:
@@ -307,9 +345,18 @@ def check(stage_path, binding, old_world=None, bundle_root_attrs=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-only", action="store_true")
+    ap.add_argument("--cell-physics", action="store_true", help="author CELL_PHYSICS on a stage that already has fmb1")
     args = ap.parse_args()
     binding = json.load(open(BINDING))
     print("USD", Usd.GetVersion())
+    if args.cell_physics:
+        lay = Sdf.Layer.FindOrOpen(STAGE)
+        if not any(str(pl.assetPath).startswith("./fmb1/") for pl in lay.GetPrimAtPath("/World/base1").payloadList.prependedItems):
+            sys.exit("the stage does not carry the fmb1 parts yet; run without flags first")
+        applied = apply_cell_physics(lay, binding)
+        lay.Save()
+        print("authored:", json.dumps(applied))
+        args.check_only = True
     if args.check_only:
         attrs = {}
         for n, p in binding["parts"].items():
@@ -337,6 +384,7 @@ def main():
     lay = Sdf.Layer.FindOrOpen(STAGE)
     lay.Reload(force=True)
     before, after = edit_stage(lay, binding, attrs)
+    apply_cell_physics(lay, binding)
     lay.Save()
     print(f"TF targets {before} -> {after}")
     problems, report, targets = check(STAGE, binding, old_world, attrs)

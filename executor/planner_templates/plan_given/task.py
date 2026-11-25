@@ -21,6 +21,22 @@ tools/pick_check.py on 2026-11-17):
     lift          = TCP + lift_height_m along world Z
     retreat       = TCP (x) [0, 0, approach_distance_m]   (back along its own Z)
 
+Carrying and inserting (2026-11-24, after records/fmb1-given-s0):
+
+    in hand       = TCP^-1 (x) part, both measured with the arm at rest (TF and
+                    the pose channel). The grasp is never the planned one: in
+                    records/fmb1-given-s0 every part hung 6-15 mm further along
+                    the TCP's Z than tcp_for's RG2 model puts it (more for wider
+                    grasps), so planned inserts aimed that far into the seat
+    TCP target    = object target (x) (in hand)^-1, so the PART lands on the
+                    target, not the planned grasp; a part that moved more than
+                    SLIP_LIMIT_M / SLIP_LIMIT_DEG in the hand since the first
+                    measurement after its pick stops the episode instead
+    hover         = approach TCP + hover_height_m along world Z
+                    (default DEFAULT_HOVER_M); the free-space move ends there
+                    and the approach is a straight descent, so a hanging part
+                    does not sweep through parts already seated
+
 Poses are robot_backend PoseDicts: {"position": {x,y,z}, "orientation": {x,y,z,w}, "frame_id"}.
 """
 
@@ -38,6 +54,9 @@ from geometry import (  # noqa: F401  (re-exported for planner.py)
 
 DEFAULT_APPROACH_M = -0.10
 DEFAULT_LIFT_M = 0.10
+DEFAULT_HOVER_M = 0.10
+SLIP_LIMIT_M = 0.010
+SLIP_LIMIT_DEG = 15.0
 
 
 def load_task(path: str | Path) -> dict[str, Any]:
@@ -91,3 +110,33 @@ def pick_step_for(task: dict[str, Any], object_id: str) -> dict[str, Any] | None
 def motion_scaling(step: dict[str, Any], default: float) -> tuple[float, float]:
     m = step.get("motion") or {}
     return (float(m.get("max_velocity_scaling_factor", default)), float(m.get("max_acceleration_scaling_factor", default)))
+
+
+def in_hand(tcp: dict[str, Any], part: dict[str, Any]) -> dict[str, Any]:
+    """The part's pose in the TCP frame: tcp^-1 (x) part."""
+    from robot_backend.utils.geometry import compose_poses, invert_pose
+
+    return compose_poses(invert_pose(tcp), part)
+
+
+def tcp_for_object(object_target: dict[str, Any], part_in_hand: dict[str, Any]) -> dict[str, Any]:
+    """The TCP pose that puts a part held as `part_in_hand` at `object_target`."""
+    from robot_backend.utils.geometry import compose_poses, invert_pose
+
+    return compose_poses(object_target, invert_pose(part_in_hand))
+
+
+def pose_difference(a: dict[str, Any], b: dict[str, Any]) -> tuple[float, float]:
+    """(distance m, rotation angle deg) between two poses."""
+    import math
+
+    pa, pb = a["position"], b["position"]
+    dist = math.sqrt(sum((pa[k] - pb[k]) ** 2 for k in "xyz"))
+    qa, qb = a["orientation"], b["orientation"]
+    dot = abs(sum(qa[k] * qb[k] for k in "xyzw"))
+    na = math.sqrt(sum(qa[k] ** 2 for k in "xyzw")) * math.sqrt(sum(qb[k] ** 2 for k in "xyzw"))
+    return dist, math.degrees(2.0 * math.acos(min(1.0, dot / na)))
+
+
+def hover_pose(tcp: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+    return raised(tcp, float(step.get("hover_height_m", DEFAULT_HOVER_M)))

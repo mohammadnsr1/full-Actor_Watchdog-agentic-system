@@ -77,3 +77,48 @@ def test_grasp_parameters():
     assert T.grasp_force(parts, "unknown") == T.DEFAULT_FORCE_THRESHOLD
     assert T.motion_scaling({"motion": {"max_velocity_scaling_factor": 0.05, "max_acceleration_scaling_factor": 0.05}}, 0.2) == (0.05, 0.05)
     assert T.motion_scaling({}, 0.2) == (0.2, 0.2)
+
+
+def _xyz(pose):
+    return [pose["position"][k] for k in "xyz"]
+
+
+def test_in_hand_correction_puts_the_part_on_the_target():
+    # A grasp that sits 6.5 mm further along the TCP's Z than planned (records/fmb1-given-s0)
+    # and slightly yawed: the corrected TCP must bring the PART, not the planned grasp, to the target.
+    step = steps()["place_u_brown"]
+    target_frame = T.obs_pose([0.41, -0.17, 0.045], [-0.7027, 0.0785, -0.0785, 0.7027])
+    geo = T.place_geometry(step, target_frame)
+    planned = T.in_hand(geo["tcp"], geo["object_target"])
+    from geometry import compose
+    actual = compose(planned, {"position": {"x": -0.0007, "z": 0.0065}, "orientation": {"z": 0.0044, "w": 1.0}})
+    tcp = T.tcp_for_object(geo["object_target"], actual)
+    from robot_backend.utils.geometry import compose_poses
+    landed = compose_poses(tcp, actual)
+    d, a = T.pose_difference(landed, geo["object_target"])
+    assert d == pytest.approx(0.0, abs=1e-9) and a == pytest.approx(0.0, abs=1e-5)
+    # ... and differs from the uncorrected TCP by about the in-hand error
+    d_tcp, _ = T.pose_difference(tcp, geo["tcp"])
+    assert d_tcp == pytest.approx(0.0065, abs=0.001)
+
+
+def test_in_hand_of_the_planned_grasp_gives_back_the_planned_tcp():
+    geo = T.place_geometry(steps()["place_line_green"], T.obs_pose([0.4, -0.2, 0.06], [0, 0, 0.38, 0.925]))
+    tcp = T.tcp_for_object(geo["object_target"], T.in_hand(geo["tcp"], geo["object_target"]))
+    d, a = T.pose_difference(tcp, geo["tcp"])
+    assert d == pytest.approx(0.0, abs=1e-9) and a == pytest.approx(0.0, abs=1e-5)
+
+
+def test_pose_difference():
+    a = T.obs_pose([0, 0, 0], [0, 0, 0, 1])
+    b = T.obs_pose([0.003, 0.004, 0], [0, 0, 2 ** -0.5, 2 ** -0.5])       # 90 deg about z
+    d, ang = T.pose_difference(a, b)
+    assert d == pytest.approx(0.005) and ang == pytest.approx(90.0)
+    assert T.pose_difference(b, T.obs_pose([0.003, 0.004, 0], [0, 0, -2 ** -0.5, -2 ** -0.5]))[1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_hover_is_above_the_approach_along_world_z():
+    tcp = T.obs_pose([0.4, -0.2, 0.15], [1, 0, 0, 0])
+    assert _xyz(T.hover_pose(tcp, {})) == pytest.approx([0.4, -0.2, 0.15 + T.DEFAULT_HOVER_M])
+    assert _xyz(T.hover_pose(tcp, {"hover_height_m": 0.05})) == pytest.approx([0.4, -0.2, 0.20])
+    assert T.hover_pose(tcp, {})["orientation"] == tcp["orientation"]

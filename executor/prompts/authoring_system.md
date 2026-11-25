@@ -33,8 +33,8 @@ the robot yourself. Your planner does, in episodes the harness runs for you.
   goes and how it sits.
 - **At run time, your planner's sensors**: part and fixture poses from the
   executor camera (`w.pose(id)`), the wrist camera's colour and depth images
-  with intrinsics and the camera's pose in the world (`w.camera1()`), joint
-  states, the gripper's width and grasp result. Use them to locate the
+  with intrinsics and the camera's pose in the world (`w.camera1()`), the
+  TCP's pose in the world (`w.tcp_pose()`), joint states, the gripper's width and grasp result. Use them to locate the
   fixture and its slots and to check what happened.
 - **After an episode**: the camera1 frames your planner saved
   (`w.save_frame(label)`) come back to you as pictures with the feedback

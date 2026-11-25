@@ -69,6 +69,7 @@ class Worker:
         self._cam: dict[str, Any] = {}
         self._cam_lock = threading.Lock()
         self._tf = None
+        self._cam_subscribed = False
         self._saved = 0
 
         from cell_planner_msgs.msg import ExecutorFact, WatchdogNotice
@@ -186,10 +187,32 @@ class Worker:
         for key, typ in (("rgb", Image), ("depth", Image), ("camera_info", CameraInfo)):
             self.node.create_subscription(typ, self.platform.camera_topic("camera1", key), keep(key), qos_profile_sensor_data,
                                           callback_group=self.cb)
-        import tf2_ros
+        self._ensure_tf()
+        self._cam_subscribed = True
 
-        self._tf = tf2_ros.Buffer()
-        self._tf_listener = tf2_ros.TransformListener(self._tf, self.node)
+    def _ensure_tf(self) -> None:
+        if self._tf is None:
+            import tf2_ros
+
+            self._tf = tf2_ros.Buffer()
+            self._tf_listener = tf2_ros.TransformListener(self._tf, self.node)
+
+    def tcp_pose(self, wait_s: float = 2.0) -> dict[str, Any]:
+        """The TCP link's current pose in the world frame, from TF (robot_state_publisher
+        on joint_states; world -> base_link is static). Read it with the arm at rest:
+        TF and the pose channel are not sampled at the same instant."""
+        from rclpy.duration import Duration
+        from rclpy.time import Time
+
+        from geometry import obs_pose
+
+        self._ensure_tf()
+        try:
+            tf = self._tf.lookup_transform(self.world, self.tip, Time(), timeout=Duration(seconds=wait_s))
+        except Exception as exc:  # noqa: BLE001  (tf2 raises several lookup exception types)
+            raise StepFailed(f"no TF {self.world} -> {self.tip}: {exc}")
+        t, q = tf.transform.translation, tf.transform.rotation
+        return obs_pose([t.x, t.y, t.z], [q.x, q.y, q.z, q.w], self.world)
 
     def camera1(self, wait_s: float = 3.0) -> dict[str, Any]:
         """The latest camera1 frame: {"rgb": HxWx3 uint8, "depth": HxW float32
@@ -198,7 +221,7 @@ class Worker:
         of the optical frame in the world (z forward, x right, y down)}."""
         import numpy as np
 
-        if self._tf is None:
+        if not self._cam_subscribed:
             self._camera_subscribe()
         deadline = time.monotonic() + wait_s
         while True:
