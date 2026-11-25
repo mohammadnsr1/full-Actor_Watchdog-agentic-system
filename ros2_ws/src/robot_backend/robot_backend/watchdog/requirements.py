@@ -122,25 +122,76 @@ def _quat_angle_deg(a: dict[str, Any], b: dict[str, Any]) -> float:
     return math.degrees(2.0 * math.acos(dot))
 
 
+def _xyzw(sample: dict[str, Any]) -> list[float]:
+    q = sample["pose"]["orientation"]
+    return [float(q["x"]), float(q["y"]), float(q["z"]), float(q["w"])]
+
+
+def _qmul(a: list[float], b: list[float]) -> list[float]:
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz]
+
+
+def _seat_error(part_pose: dict[str, Any], frame_pose: dict[str, Any], symmetries: list[Any],
+                pos_tol: float, ori_tol: float) -> tuple[float, float, int]:
+    """(position m, orientation deg, symmetry index) of the part against the frame, at the part's
+    best-fitting proper symmetry S (frame (x) S; index 0 is the identity)."""
+    fp, fq = _position(frame_pose), _xyzw(frame_pose)
+    pp, pq = _position(part_pose), _xyzw(part_pose)
+    best = None
+    for i, (t, q) in enumerate([((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))] + list(symmetries)):
+        x, y, z, _ = _qmul(_qmul(fq, [float(t[0]), float(t[1]), float(t[2]), 0.0]), [-fq[0], -fq[1], -fq[2], fq[3]])
+        tq = _qmul(fq, [float(v) for v in q])
+        dp = math.dist(pp, (fp[0] + x, fp[1] + y, fp[2] + z))
+        dot = min(1.0, abs(sum(a * b for a, b in zip(pq, tq))) / (math.sqrt(sum(a * a for a in pq)) * math.sqrt(sum(b * b for b in tq))))
+        dq = math.degrees(2.0 * math.acos(dot))
+        score = max(dp / pos_tol, dq / ori_tol)
+        if best is None or score < best[0]:
+            best = (score, dp, dq, i)
+    return best[1], best[2], best[3]
+
+
+def _symmetries() -> dict[str, Any]:
+    try:
+        from cell_platform_interfaces.placements import load_symmetries
+
+        return load_symmetries(repo_root())
+    except Exception:  # noqa: BLE001 - no symmetries file means identity only
+        return {}
+
+
 def inspect_acceptance(
     recorder: Any,
     requirements: dict[str, Any],
     parts: dict[str, Any],
     max_age_s: float = 2.0,
+    symmetries: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compare each acceptance part's latest observed pose to its placement frame.
 
     Uses the recorder's buffered WatchDog poses (camera2 channel) for both the
-    part and the frame. Returns a table with one row per part:
+    part and the frame. A part counts as at a frame up to its own proper
+    symmetries (config/placements/ `symmetries`), and parts listed together in
+    acceptance.interchangeable may fill each other's frames, one per frame (the
+    assignment seating the most parts is reported; the same rule as the
+    runner's ground-truth checker). Returns a table with one row per part:
         status: pass | fail | missing_evidence
-        position_error_m, orientation_error_deg, tolerances, evidence (source,
-        sample ages), and a reason when evidence is missing.
+        position_error_m, orientation_error_deg, symmetry, placement_frame (the
+        frame judged; swapped_from when it is another part's), tolerances,
+        evidence (source, sample ages), and a reason when evidence is missing.
     """
+    import itertools
+
     from robot_backend.watchdog.timebase import wall_ns
 
     now = wall_ns()
+    symmetries = _symmetries() if symmetries is None else symmetries
     rows: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
+    ready: dict[str, tuple[dict[str, Any], float, float]] = {}
+    own: dict[str, str] = {}
     for pid, entry in acceptance_parts(requirements).items():
         frame_id = entry.get("placement_frame")
         tol = part_tolerances(parts, pid)
@@ -160,24 +211,45 @@ def inspect_acceptance(
             reasons.append(f"no observed pose for frame {frame_id}")
         if pos_tol is None or ori_tol is None:
             reasons.append(f"tolerances for {pid} are missing in watchdog_parts.yaml")
+        rows[pid] = row
         if reasons:
             row["status"] = "missing_evidence"
             row["reason"] = "; ".join(reasons)
             missing.append(pid)
-            rows[pid] = row
             continue
-        dp = math.dist(_position(part_pose), _position(frame_pose))
-        dq = _quat_angle_deg(part_pose, frame_pose)
-        row["position_error_m"] = dp
-        row["orientation_error_deg"] = dq
-        row["status"] = "pass" if (dp <= float(pos_tol) and dq <= float(ori_tol)) else "fail"
-        row["evidence"] = {
-            "source": recorder.pose_source_name(),
-            "camera": "camera2",
-            "part_sample_wall_ns": int(part_pose["wall_ns"]),
-            "frame_sample_wall_ns": int(frame_pose["wall_ns"]),
-        }
-        rows[pid] = row
+        ready[pid] = (part_pose, float(pos_tol), float(ori_tol))
+        own[pid] = str(frame_id)
+    groups = [[pid for pid in g if pid in ready] for g in ((requirements.get("acceptance") or {}).get("interchangeable") or [])]
+    grouped = {pid for g in groups for pid in g}
+    groups = [g for g in groups if g] + [[pid] for pid in ready if pid not in grouped]
+    for group in groups:
+        best = None
+        for perm in itertools.permutations([own[pid] for pid in group]):
+            judged = []
+            for pid, frame_id in zip(group, perm):
+                part_pose, pos_tol, ori_tol = ready[pid]
+                frame_pose = recorder.latest_object_pose(frame_id)
+                dp, dq, sym = _seat_error(part_pose, frame_pose, symmetries.get(pid) or [], pos_tol, ori_tol)
+                judged.append((pid, frame_id, frame_pose, dp, dq, sym, dp <= pos_tol and dq <= ori_tol))
+            score = (sum(j[6] for j in judged), -sum(j[3] for j in judged))
+            if best is None or score > best[0]:
+                best = (score, judged)
+        for pid, frame_id, frame_pose, dp, dq, sym, ok in best[1]:
+            row = rows[pid]
+            part_pose = ready[pid][0]
+            row["placement_frame"] = frame_id
+            if frame_id != own[pid]:
+                row["swapped_from"] = own[pid]
+            row["position_error_m"] = dp
+            row["orientation_error_deg"] = dq
+            row["symmetry"] = sym
+            row["status"] = "pass" if ok else "fail"
+            row["evidence"] = {
+                "source": recorder.pose_source_name(),
+                "camera": "camera2",
+                "part_sample_wall_ns": int(part_pose["wall_ns"]),
+                "frame_sample_wall_ns": int(frame_pose["wall_ns"]),
+            }
     statuses = [r["status"] for r in rows.values()]
     overall = "pass" if statuses and all(s == "pass" for s in statuses) else ("fail" if "fail" in statuses else "missing_evidence")
     return {

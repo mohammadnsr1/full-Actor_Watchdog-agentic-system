@@ -457,9 +457,10 @@ def main(argv: list[str] | None = None) -> int:
 
         # Placements come from config/placements/<assembly>.yaml relative to the
         # fixture (cell_platform_interfaces.placements), not from published frames.
-        from cell_platform_interfaces.placements import derive_into, load_placements
+        from cell_platform_interfaces.placements import derive_into, load_placements, load_symmetries
 
         placements = load_placements(REPO, args.assembly)
+        symmetries = load_symmetries(REPO, args.assembly)
         manifest["inputs"]["placements"] = file_record(REPO / "config" / "placements" / f"{args.assembly}.yaml", REPO)
         derive_into(before, placements)
 
@@ -536,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
         stage(verdict, "check")
         after = rn.backends.scene.report_poses().data.get("poses") or {}
         verdict["placements_derived"] = derive_into(after, placements)
-        verdict["checker"] = checker.check(requirements, wd_parts, before, after)
+        verdict["checker"] = checker.check(requirements, wd_parts, before, after, symmetries)
         p = verdict["planner"]
         if p.get("outcome") == "protocol_error":
             verdict["outcome"] = "invalid"

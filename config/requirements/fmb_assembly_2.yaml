@@ -23,6 +23,12 @@ instruction_spec: |
 
   Acceptance (judged when the episode ends):
     - Each listed part is seated at its placement frame within its tolerance.
+      u_brown and u_orange are identical parts: either may end in either U
+      frame (u_brown_placement or u_orange_placement), one part per frame.
+    - A part turned by a rotation that maps its shape onto itself is seated
+      just the same: the U parts and inverted_u_yellow may be turned 180 deg
+      about the vertical; line_green, a square bar, by any of its 8 such turns
+      (180 deg end over end, and 90 deg steps about its long axis).
     - base1 is undisturbed: it is the fixture and is never picked.
 
   Invariants (must hold throughout the episode, whatever the robot is doing):
@@ -63,6 +69,11 @@ acceptance:
       grasp_width_m: 0.04
   fixtures:
     - base1
+  # Identical parts that may fill each other's placement frames, one per frame
+  # (Mohammad 2026-11-25; fmb1's task: Body2 and Body5 are one class,
+  # not_interchangeable: []). Symmetries: config/placements/ `symmetries`.
+  interchangeable:
+    - [u_brown, u_orange]
 
 # Objects that must never move during this task. Empty since 2026-11-24: the
 # other FMB board's parts (u_green, inverted_u_brown, hex_blue, hex_red, base2)
@@ -71,10 +82,13 @@ bystanders: []
 
 # Rendered as {{OBJECT_IDS}}.
 object_ids: |
-  u_brown           — FMB U part, graspable. Must end seated at u_brown_placement.
+  u_brown           — FMB U part, graspable. Must end seated at u_brown_placement
+                      or, if u_orange takes that one, at u_orange_placement.
   inverted_u_yellow — FMB inverted-U part, graspable. Must end seated at
                       inverted_u_yellow_placement.
-  u_orange          — FMB U part, graspable. Must end seated at u_orange_placement.
+  u_orange          — FMB U part, identical to u_brown, graspable. Must end seated
+                      at u_orange_placement or, swapped with u_brown, at
+                      u_brown_placement.
   line_green        — FMB line part, graspable. Must end seated at
                       line_green_placement.
   base1             — the fixture. NOT graspable, never picked, must stay put.

@@ -6,7 +6,8 @@
 # fallback. Selected by config/cell.yaml `platform:` or the CELL_PLATFORM env var.
 #
 # Values here are the names the WatchDog cell has used since 2026-09 (see
-# docs/BUILD_PLAN.md section 5.1 for where each one used to live).
+# docs/BUILD_PLAN.md section 5.1 in git history, e.g. `git show e4071bc:docs/BUILD_PLAN.md`,
+# for where each one used to live).
 
 platform: sim
 use_sim_time: true
@@ -105,7 +106,7 @@ poses:
   # ground_truth: a cell node converts the Isaac-published object TF into the
   #               two pose topics below (cell_backend_sim ground_truth_pose_publisher).
   # foundationpose: the topics are fed by perception (not available yet; see
-  #               BUILD_PLAN question 6).
+  #               hardware list in docs/NEXT_STEPS.md).
   source: ground_truth
   message: vision_msgs/Detection3DArray
   executor_topic: /camera1/poses     # camera1 (wrist): executor pose-query service only

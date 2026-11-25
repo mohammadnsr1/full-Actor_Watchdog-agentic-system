@@ -50,3 +50,31 @@ placements:
     - 0.0
     - 0.0
     - 0.707106781
+# Each part's proper symmetries other than the identity, from fmb1's proved symmetry
+# certificates (BodyN.part-graph.json), as transforms S in the part's own prim frame: a part
+# at frame (x) S occupies exactly what it occupies at the frame, so it is seated there too.
+symmetries:
+  u_brown:
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 1.0, 0.0, 0.0]
+  u_orange:
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 1.0, 0.0, 0.0]
+  line_green:
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.707106781, 0.0, -0.707106781, 0.0]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.707106781, 0.0, 0.707106781, 0.0]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, -0.707106781, 0.0, 0.707106781]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 0.0, 1.0, 0.0]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 1.0, 0.0, 0.0]
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 0.707106781, 0.0, 0.707106781]
+  inverted_u_yellow:
+  - position: [0.0, 0.0, 0.0]
+    orientation_xyzw: [0.0, 1.0, 0.0, 0.0]

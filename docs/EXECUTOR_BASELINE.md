@@ -10,7 +10,7 @@ This replaces the M7 authoring setup (`runner/run_authoring.sh`, the
 `plan_given` / `plan_free` conditions, `executor/prompts/`) as the way the
 executor is run for the study. M7's episode runner, planner contract, backends,
 recorder and checker stay. Phases are numbered EB1-EB8 so they do not collide
-with BUILD_PLAN's M8.
+with the build track's M8 (`docs/PROGRESS.md`).
 
 ## 1. What the labmate's setup is
 

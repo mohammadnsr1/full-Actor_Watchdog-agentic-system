@@ -49,3 +49,17 @@ def test_load_from_folder(tmp_path):
     pl = load_placements(tmp_path)
     assert list(pl) == ["p1"] and close(pl["p1"].orientation_xyzw, (0, 0, 0, 1))
     assert load_placements(tmp_path, "missing") == {}
+
+
+def test_symmetries_parse_and_load(tmp_path):
+    from cell_platform_interfaces.placements import load_symmetries, parse_symmetries
+    import pytest
+    data = {"symmetries": {"u": [{"position": [0, 0, 0], "orientation_xyzw": [0, 2, 0, 0]}]}}
+    assert parse_symmetries(data) == {"u": [((0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0))]}
+    with pytest.raises(ValueError):
+        parse_symmetries({"symmetries": {"u": [{"position": [0, 0]}]}})
+    assert parse_symmetries({}) == {}
+    d = tmp_path / "config" / "placements"
+    d.mkdir(parents=True)
+    (d / "asm.yaml").write_text("symmetries:\n  u:\n  - {position: [0, 0, 0], orientation_xyzw: [0, 1, 0, 0]}\n")
+    assert list(load_symmetries(tmp_path, "asm")) == ["u"]

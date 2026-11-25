@@ -298,8 +298,43 @@ def test_acceptance_inspection_passes_fails_and_reports_missing():
         "c": {"placement_frame": "c_placement", "grasp_width_m": 0.02},
     }}}
     parts = {"parts": {k: {"tolerances": {"position_m": 0.01, "orientation_deg": 5.0}} for k in "abc"}}
-    out = req.inspect_acceptance(rec, requirements, parts)
+    out = req.inspect_acceptance(rec, requirements, parts, symmetries={})
     assert out["parts"]["a"]["status"] == "pass"
     assert out["parts"]["b"]["status"] == "fail" and out["parts"]["b"]["position_error_m"] == pytest.approx(0.5)
     assert out["parts"]["c"]["status"] == "missing_evidence" and out["missing_evidence"] == ["c"]
     assert out["overall"] == "fail" and out["evidence_sources"] == ["ground_truth"]
+
+
+def test_acceptance_inspection_swapped_pair_and_symmetric_turn():
+    from robot_backend.watchdog import requirements as req
+
+    class _Rec:
+        def __init__(self, poses):
+            self.poses = poses
+
+        def latest_object_pose(self, oid):
+            return self.poses.get(oid)
+
+        def pose_source_name(self):
+            return "ground_truth"
+
+    def pose(x, q=(0.0, 0.0, 0.0, 1.0)):
+        return {"wall_ns": time.time_ns(), "tf_stamp_ns": 1, "object_id": "o",
+                "pose": {"position": {"x": x, "y": 0.0, "z": 0.0}, "orientation": dict(zip("xyzw", q))}}
+
+    z180 = (0.0, 0.0, 1.0, 0.0)
+    # a and c swapped; a also turned 180 deg about z (one of its symmetries)
+    rec = _Rec({"a": pose(0.3, z180), "c": pose(0.1), "a_placement": pose(0.1), "c_placement": pose(0.3)})
+    requirements = {"acceptance": {"parts": {
+        "a": {"placement_frame": "a_placement", "grasp_width_m": 0.02},
+        "c": {"placement_frame": "c_placement", "grasp_width_m": 0.02},
+    }, "interchangeable": [["a", "c"]]}}
+    parts = {"parts": {k: {"tolerances": {"position_m": 0.01, "orientation_deg": 5.0}} for k in "ac"}}
+    sym = {"a": [((0.0, 0.0, 0.0), z180)], "c": [((0.0, 0.0, 0.0), z180)]}
+    out = req.inspect_acceptance(rec, requirements, parts, symmetries=sym)
+    assert out["overall"] == "pass"
+    assert out["parts"]["a"]["placement_frame"] == "c_placement" and out["parts"]["a"]["swapped_from"] == "a_placement"
+    assert out["parts"]["a"]["symmetry"] == 1
+    requirements["acceptance"]["interchangeable"] = []
+    assert req.inspect_acceptance(rec, requirements, parts, symmetries=sym)["overall"] == "fail"
+    assert req.inspect_acceptance(rec, requirements, parts, symmetries={})["parts"]["c"]["status"] == "fail"

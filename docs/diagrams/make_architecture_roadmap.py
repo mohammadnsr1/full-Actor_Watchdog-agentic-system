@@ -2,9 +2,9 @@
 """Draw docs/diagrams/architecture_roadmap.{svg,png}.
 
 One poster: layered architecture, one episode, the authoring loop, design
-rules, and the two roadmap tracks (BUILD_PLAN v2 milestones M1-M8 and the
+rules, and the two roadmap tracks (build milestones M1-M8 and the
 executor baseline phases EB1-EB8). Content is taken from docs/ARCHITECTURE.md,
-docs/NEXT_STEPS.md, docs/BUILD_PLAN.md, docs/EXECUTOR_BASELINE.md and
+docs/NEXT_STEPS.md, docs/PROGRESS.md, docs/EXECUTOR_BASELINE.md and
 docs/INDEPENDENCE.md; edit the CONTENT below when those change, then run:
 
     python3 docs/diagrams/make_architecture_roadmap.py
@@ -161,7 +161,7 @@ text(40, 90, "Architecture, design, phases and milestones  ·  two agents that "
      "never talk to each other: an executor that writes a planner, and a "
      "plan-blind WatchDog that judges each episode", size=15, fill=MUTED)
 text(40, 113, f"State as of {AS_OF}  ·  sources: docs/ARCHITECTURE.md, "
-     "NEXT_STEPS.md, BUILD_PLAN.md (v2), EXECUTOR_BASELINE.md, INDEPENDENCE.md",
+     "NEXT_STEPS.md, PROGRESS.md, EXECUTOR_BASELINE.md, INDEPENDENCE.md",
      size=12, fill=MUTED)
 
 # legend
@@ -508,7 +508,7 @@ def track(y, title, subtitle, theme, items):
     return cy0 + 30 + ch
 
 
-ya = track(RY + 14, "Track A · Build milestones  (docs/BUILD_PLAN.md v2)",
+ya = track(RY + 14, "Track A · Build milestones  (docs/PROGRESS.md)",
            "Builds the cell: platform, planning, WatchDog independence, Isaac tooling, harness",
            "ros", [
                ("M1", "Build plan + portability audit", "done", "11-10",
@@ -535,7 +535,7 @@ yb = track(ya + 34, "Track B · Executor baseline for the study  (docs/EXECUTOR_
                ("EB1", "Bring in workspace pieces", "done", "11-24",
                 "benchmark/ (git-ignored, pinned), 7 assemblies, ingest + resolver; fmb1 = fmb_assembly_2."),
                ("EB2", "Task bundles for this cell", "progress", "now",
-                "fmb1 on the stage + physics fixes done; fmb1-given-s1 re-check, task.yaml, graph checker."),
+                "fmb1 stage, fmb1 seats, checker modulo symmetry done (4/4); task.yaml + env/robot records next."),
                ("EB3", "Lab verbs", "planned", "next",
                 "lab__* on omni-kit-mcp + command server: reset, checkpoint, contacts, camera, move_robot."),
                ("EB4", "Authoring container", "planned", "planned",
@@ -560,7 +560,7 @@ box(40, by_, bw, H - 30 - by_, "harn", "Research question: do free-form WatchDog
 box(40 + bw + 20, by_, bw, H - 30 - by_, "note", "Open items", [
     ("cuRobo: written, not installed or run; every episode so far planned with MoveIt.", "bullet"),
     ("Hardware: camera2 pose pipeline (no FoundationPose yet); M7 hardware side not started.", "bullet"),
-    ("Placement frames sit 1-6.55 mm above fmb1's seats; RG2 hang model off by 6-15 mm.", "bullet"),
+    ("Layout jitter ranges (9-seed panel); table physics material; resolver frame check (16.7 mm).", "bullet"),
 ], title_size=15, size=12.5)
 
 svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '

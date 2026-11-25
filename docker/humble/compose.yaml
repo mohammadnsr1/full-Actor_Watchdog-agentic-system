@@ -5,7 +5,7 @@
 #
 # Host networking: the container joins the same DDS domain as the UR AI
 # Accelerator. Never run a Jazzy node in this domain (single-distro rule,
-# docs/PLATFORMS.md).
+# docs/ARCHITECTURE.md, Platforms).
 
 services:
   cell:
@@ -16,7 +16,7 @@ services:
     network_mode: host
     ipc: host
     environment:
-      # TODO(mohammad): the accelerator's values (BUILD_PLAN q12).
+      # TODO(mohammad): the accelerator's values (docs/NEXT_STEPS.md, Hardware).
       ROS_DOMAIN_ID: "0"
       RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
       CELL_PLATFORM: hardware

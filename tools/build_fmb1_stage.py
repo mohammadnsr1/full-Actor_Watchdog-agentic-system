@@ -118,6 +118,61 @@ def derive_placements(binding):
     return out
 
 
+def derive_symmetries(binding):
+    """{part: [(t, (w, x, y, z)), ...]}: the part's proper symmetries other than the identity, as
+    prim-frame transforms S (a part at F (x) S occupies exactly what it occupies at F). The group is
+    closed from the PROVED rotation generators of fmb1's part graph (BodyN.part-graph.json, about axes
+    through the centroid, in the STEP frame), and its order is checked against the certificate."""
+    import itertools
+
+    def rot(axis, angle):
+        n = math.sqrt(sum(a * a for a in axis)); x, y, z = (a / n for a in axis)
+        c, s_, C = math.cos(angle), math.sin(angle), 1 - math.cos(angle)
+        return [[c + x * x * C, x * y * C - z * s_, x * z * C + y * s_],
+                [y * x * C + z * s_, c + y * y * C, y * z * C - x * s_],
+                [z * x * C - y * s_, z * y * C + x * s_, c + z * z * C]]
+
+    def close(A, B):
+        return all(abs(A[i][j] - B[i][j]) < 1e-9 for i in range(4) for j in range(4))
+
+    out = {}
+    for name, p in binding["parts"].items():
+        if name == FIXTURE:
+            continue
+        nodes = json.load(open(os.path.join(os.path.dirname(GRAPH), f"{p['body']}.part-graph.json")))["nodes"]
+        origin = nodes["frame:object"]["payload"]["origin_step_m"]
+        gens = []
+        for key, node in nodes.items():
+            g = node.get("payload") or {}
+            if key.startswith("gen:") and g.get("kind") == "rotation" and g["proof"]["verdict"] == "PROVED":
+                Rg = rot(g["direction"], g["angle_rad"])
+                c = [g["point_m"][i] - origin[i] for i in range(3)]
+                gens.append(_rigid(Rg, [c[i] - sum(Rg[i][k] * c[k] for k in range(3)) for i in range(3)]))
+        identity = _rigid([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0])
+        group, grew = [identity], True
+        while grew:
+            grew = False
+            for A, G in itertools.product(list(group), gens):
+                C = _mul(A, G)
+                if not any(close(C, X) for X in group):
+                    group.append(C); grew = True
+        order = nodes["cert:00"]["payload"]["proper_rotation_order"]
+        if len(group) != order:
+            sys.exit(f"{name}: closed {len(group)} proper symmetries, certificate says {order}")
+        P = _rigid(p["R_prim_from_object"], p["t_prim_from_object_m"])
+        syms = []
+        for S in group[1:]:
+            M = _mul(_mul(P, S), _inv(P))
+            q = quat_from_R([row[:3] for row in M[:3]])
+            clean = lambda v: 0.0 if abs(v) < 1e-9 else v
+            w, x, y, z = (clean(v) for v in (q.GetReal(), *q.GetImaginary()))
+            if next(v for v in (w, x, y, z) if v != 0.0) < 0:       # one sign per rotation
+                w, x, y, z = -w, -x, -y, -z
+            syms.append(([clean(M[i][3]) for i in range(3)], (w, x, y, z)))
+        out[name] = syms
+    return out
+
+
 def apply_placements(lay, placements):
     for name, (t, q) in placements.items():
         spec = lay.GetPrimAtPath(f"/World/{FIXTURE}/{name}_placement")
@@ -127,7 +182,7 @@ def apply_placements(lay, placements):
         set_attr(spec, "xformOp:orient", Sdf.ValueTypeNames.Quatd, Gf.Quatd(q[0], q[1], q[2], q[3]))
 
 
-def write_placements_yaml(placements):
+def write_placements_yaml(placements, symmetries):
     lines = [
         f"# Placements of fmb_assembly_2 relative to its fixture ({FIXTURE}): WATCHDOG SIDE ONLY.",
         "# Read by cell_platform_interfaces.placements. The executor's settings deny this file.",
@@ -145,6 +200,17 @@ def write_placements_yaml(placements):
     for name, (t, (w, x, y, z)) in placements.items():
         lines += [f"  {name}_placement:", "    position:"] + [f"    - {round(v, 9)!r}" for v in t]
         lines += ["    orientation_xyzw:"] + [f"    - {round(v, 9)!r}" for v in (x, y, z, w)]
+    lines += [
+        "# Each part's proper symmetries other than the identity, from fmb1's proved symmetry",
+        "# certificates (BodyN.part-graph.json), as transforms S in the part's own prim frame: a part",
+        "# at frame (x) S occupies exactly what it occupies at the frame, so it is seated there too.",
+        "symmetries:",
+    ]
+    for name, syms in symmetries.items():
+        lines.append(f"  {name}:")
+        for t, (w, x, y, z) in syms:
+            lines.append(f"  - position: [{', '.join(repr(round(v, 9)) for v in t)}]")
+            lines.append(f"    orientation_xyzw: [{', '.join(repr(round(v, 9)) for v in (x, y, z, w))}]")
     with open(PLACEMENTS_YAML, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -457,7 +523,7 @@ def main():
         if args.placements:
             placements = derive_placements(binding)
             apply_placements(lay, placements)
-            write_placements_yaml(placements)
+            write_placements_yaml(placements, derive_symmetries(binding))
             print("placements:", json.dumps(placements))
         lay.Save()
         args.check_only = True
@@ -492,7 +558,7 @@ def main():
     placements = derive_placements(binding)
     apply_placements(lay, placements)
     lay.Save()
-    write_placements_yaml(placements)
+    write_placements_yaml(placements, derive_symmetries(binding))
     print(f"TF targets {before} -> {after}")
     problems, report, targets = check(STAGE, binding, old_world, attrs)
     binding["built"] = {"by": "tools/build_fmb1_stage.py", "usd": list(Usd.GetVersion()),

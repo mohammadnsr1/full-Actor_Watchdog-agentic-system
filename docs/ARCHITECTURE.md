@@ -1,8 +1,11 @@
 # Architecture
 
-Written 2026-11-23 (Milestone 7). How the code and files connect, from the
-simulator and ROS 2 up to the two agents. Diagrams are plain text so they
-show everywhere (editor, preview, terminal).
+Written 2026-11-23 (Milestone 7), updated 2026-11-25 (executor baseline, EB2).
+How the code and files connect, from the simulator and ROS 2 up to the two
+agents. Kept current as the project moves; the history is in
+`docs/PROGRESS.md`. Diagrams are plain text so they show everywhere (editor,
+preview, terminal); a poster version is `docs/diagrams/architecture_roadmap.svg`
+(`docs/diagrams/make_architecture_roadmap.py`).
 
 Two agents never talk to each other:
 
@@ -65,7 +68,7 @@ Everything between them and the robot is ROS 2, and every ROS name comes from
  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                              ▲ ROS 2 bridge + TCP 9010
                              ▼
- ┌─ ISAAC SIM 5.1  (assets/usd/assembly_room.usd) ───────────────────────────────────────────────────────────────┐
+ ┌─ ISAAC SIM 5.1  (assets/usd/assembly_room.usd: fmb1 parts, section 5) ────────────────────────────────────────┐
  │ ROS 2 bridge graphs: /clock /joint_states /joint_command /tf, camera1 + camera2 images                        │
  │ cell command server (isaac/cell_command_server, TCP 9010): reset, poses, contacts, timeline                   │
  │ on hardware this band is the UR driver, the RG6 and the Orbbec cameras (cell_backend_hw)                      │
@@ -186,16 +189,53 @@ Both templates share `executor/planner_templates/common/`: `run.sh`, the MCP
 
 See `docs/INDEPENDENCE.md` for each channel and where it is cut.
 
-## 5. Where things live
+## 5. The assembly, the stage and acceptance
+
+```text
+ benchmark/assemblies/fmb1/                 (labmate's prompt-to-assembly, pinned, git-ignored)
+   bundles/BodyN.usda ──────────────┐        part bundles: mesh, box colliders, material, mass
+   artifacts/fmb1.assembly-graph ───┤        assembled poses (the seats), mates, classes
+   artifacts/BodyN.part-graph ──────┤        proved symmetry certificates
+                                    ▼
+ tools/build_fmb1_stage.py  +  assets/usd/fmb1/binding.json   (body -> prim, prim <- object transform)
+   ├─► assets/usd/fmb1/<part>.usda              payload of /World/<part>; fmb1's frame as child fmb1_occurrence_NN
+   ├─► assets/usd/assembly_room.usd             CELL_PHYSICS (base1 kinematic, depenetration 0.5 m/s, CCD),
+   │                                            /World/base1/<part>_placement = fmb1's seat
+   └─► config/placements/fmb_assembly_2.yaml    the same seats relative to base1 + each part's symmetries
+                                    │
+        ┌───────────────────────────┴──────────────────────────────┐
+        ▼ executor (camera1 / TF)                                  ▼ WatchDog side (camera2, derived from base1's pose)
+   placement frames as published by Isaac              WatchDog inspect_acceptance, cell_physical_events,
+                                                       runner checker
+```
+
+- **Acceptance** (`config/requirements/<assembly>.yaml` `acceptance`): each part
+  at its placement frame within its registry tolerance, judged *modulo* the
+  part's proper symmetries (a part at frame (x) S occupies the same space) and
+  with `interchangeable` groups (identical parts, here `u_brown`/`u_orange`)
+  free to fill each other's frames, one per frame. The runner's ground-truth
+  checker and the WatchDog's `inspect_acceptance` apply the same rule.
+- **The stage file** is only changed by tools: `build_fmb1_stage.py` (full build
+  from the pre-fmb1 commit cd4d6c7, `--cell-physics`, `--placements`,
+  `--check-only`) and `clean_stage_render.py` (removes render products Isaac
+  writes into the file when saved after Play). Both run with Isaac's own USD
+  (0.24.5); see the build tool's docstring.
+- **Grasp geometry**: `robot_backend.utils.rg2_geometry` maps a grasp centre and
+  jaw width to the fixed TCP with Mohammad's width-indexed calibration table
+  (`isaac_trajectory_bridge/config/rg2_calibration_table.csv`; four-bar RG2, the
+  grasp centre 68.5 mm from the TCP closed, 25 mm open). The planner templates'
+  `tcp_for` refuses to run without the table.
+
+## 6. Where things live
 
 | Path | What | Used by |
 |---|---|---|
 | `config/platforms/{sim,hardware}.yaml` | every topic, service, action, frame and joint name | all ROS code, via `cell_platform_interfaces.platform_config` |
 | `config/cell.yaml` | planner backend, budgets, WatchDog mode/consult, `executor_feedback`, recording | runner, planning service, WatchDog server, authoring MCP |
 | `config/tasks/` | executor task files (full and plan-free) | planner, authoring MCP |
-| `config/requirements/` | what the WatchDog judges against | WatchDog server, runner's checker |
+| `config/requirements/` | what the WatchDog judges against; `acceptance` (parts, fixtures, `interchangeable`) | WatchDog server, runner's checker |
 | `config/parts/` | executor and WatchDog part data, generated from `robot_backend/config/model_registry.yaml` by `tools/split_registry.py` | planner; WatchDog; checker |
-| `config/placements/<assembly>.yaml` | each placement frame relative to the fixture (measured once); WatchDog side only | WatchDog pose source, `cell_physical_events`, runner checker |
+| `config/placements/<assembly>.yaml` | each placement frame relative to the fixture and each part's symmetries, derived from fmb1 (section 5); WatchDog side only | WatchDog pose source and acceptance, `cell_physical_events`, runner checker |
 | `config/assembly_views/<assembly>/` | pictures of the finished assembly | both agents (`get_assembly_views`, `assembly_reference`) |
 | `config/layouts/<assembly>/` | reset poses per layout | Isaac command server |
 | `config/mcp/`, `config/settings/` | per-role MCP configs and permissions | `run_authoring.sh`, `run_episode.py`, `run_watchdog.sh` |
@@ -204,10 +244,14 @@ See `docs/INDEPENDENCE.md` for each channel and where it is cut.
 | `runner/` | episode runner, recorder, launch scripts, `jsonl.py` | everything that writes `records/` |
 | `isaac/` | Kit-side code: command server, headless launch, camera setup | Isaac Sim |
 | `ros2_ws/src/` | the ROS packages in section 1, plus descriptions (`robot_description`, `onrobot_rg_description`, `ur5e_moveit_config`) and `sim_moveit_bringup` (the sim launch) | the cell |
-| `tools/` | `pick_check.py`, `split_registry.py`, `derive_plan_free_task.py` | by hand |
+| `tools/` | `build_fmb1_stage.py`, `clean_stage_render.py`, `fetch_benchmark.sh`, `pick_check.py`, `split_registry.py`, `derive_plan_free_task.py`, `measure_placements.py`, `ingest/` (CAD split, its own venv) | by hand |
+| `benchmark/` (ignored) | the labmate's prompt-to-assembly pieces at a pinned commit (`UPSTREAM.json`) | stage build, checker data, later the agent's task data (EB4) |
+| `assets/usd/` | `assembly_room.usd` (the stage), `fmb1/` (generated part payloads + `binding.json`), robot and table assets | Isaac |
+| `assets/cad/fmb/` | FMB CAD (CC BY 4.0), split per part | reference, ingest |
+| `docs/` | `ARCHITECTURE` (this), `NEXT_STEPS`, `PROGRESS`, `EXECUTOR_BASELINE`, `PLANNER_CONTRACT`, `INDEPENDENCE`, `PROVENANCE`; `diagrams/` | people and the executor prompt (`PLANNER_CONTRACT`) |
 | `records/` (ignored) | episode records | runner, authoring MCP |
 
-## 6. Records
+## 7. Records
 
 Everything is JSON or JSON Lines (one object per line).
 
@@ -227,7 +271,7 @@ records/authoring/<session>/
 records/pick_check/<stamp>.json
 ```
 
-## 7. Where the v1 robot_backend pieces went
+## 8. Where the v1 robot_backend pieces went
 
 | v1 (WatchDog_V1 `robot_backend`) | v2 |
 |---|---|
@@ -241,3 +285,79 @@ records/pick_check/<stamp>.json
 | `nodes/scene_tf_sync_node.py`, `utils/geometry.py`, `utils/rg2_geometry.py` | kept |
 
 The executor modules were deleted in Milestone 7 (`docs/PROVENANCE.md`).
+
+## 9. Platforms
+
+One codebase, two platforms, one ROS 2 distro per graph. Platform selection is
+`config/cell.yaml: platform` or `CELL_PLATFORM`.
+
+| Process | Sim | Hardware |
+|---|---|---|
+| Robot | Isaac Sim 5.1 (Kit Python 3.11), GUI or headless | UR7e through the UR ROS 2 driver on the UR AI Accelerator (Jetson Orin, Ubuntu 22, Humble) |
+| Motion server | `isaac_trajectory_bridge` FollowJointTrajectory, Jazzy | UR driver trajectory controller on the accelerator |
+| Gripper | RG2 controller node | OnRobot RG6 through the URCap, URScript; no ROS 2 readings yet |
+| camera1 (wrist) / camera2 (table) poses | `ground_truth_pose_publisher` from Isaac TF | FoundationPose (not built yet); Orbbec Gemini 335Lg cameras |
+| Planning service | Jazzy, MoveIt default | accelerator SDK planner first, cuRobo second, MoveIt backup |
+| WatchDog MCP server | Jazzy native | Humble container on the workstation (`docker/humble/`) |
+| Physical events, recorder, episode runner | Jazzy native | accelerator (Mohammad, 2026-11-10); runner placement open |
+
+- **Single distro per graph.** Sim is Jazzy end to end. Hardware is Humble end
+  to end: workstation-side hardware nodes run in `docker/humble/` with host
+  networking. A Jazzy node is never started in the hardware domain, and the
+  container never runs while the sim graph is up with the same `ROS_DOMAIN_ID`.
+- **Python 3.10 baseline** for shared packages (everything except
+  `isaac_trajectory_bridge`, `sim_moveit_bringup`, `ur5e_moveit_config`,
+  `cell_backend_sim`, `isaac/`): no `type` statement, PEP 695 generics,
+  `except*`, `typing.Self`, `tomllib`, `StrEnum`, `datetime.UTC`,
+  `asyncio.TaskGroup`/`timeout`, `NotRequired`, `hashlib.file_digest`,
+  `itertools.batched`, `typing.override`, 3.12 f-string quoting, or
+  `fromisoformat` on `...Z` strings (`cell_platform_interfaces.timebase.parse_wall_time_iso`).
+- **Humble/Jazzy differences** are isolated in
+  `cell_platform_interfaces/compat.py`: rosbag2 storage (always `-s mcap`),
+  `MotionPlanRequest.pipeline_id`, newer `MoveItErrorCodes` (fall back to
+  `PLANNING_FAILED`), MoveIt config format (sim-only package), no
+  `rclpy.wait_for_message` / `create_timer(autostart=)` in shared code,
+  `vision_msgs` 4.1.x fields only, `use_sim_time` from the platform file.
+- **Names**: topics, frames, joints, actions, services, pose topics and signals in
+  `config/platforms/{sim,hardware}.yaml`; cameras in `config/cameras/`; gripper
+  models in `config/gripper/`; budgets and modes in `config/cell.yaml`. Code reads
+  them through `cell_platform_interfaces.platform_config` (a missing key raises);
+  `ros2 run cell_platform_interfaces show_platform sim` prints what a process sees.
+- **Building**: sim `cd ros2_ws && source /opt/ros/jazzy/setup.bash && colcon build`
+  (installed packages are copies: rebuild after editing a package's Python);
+  hardware `docker compose -f docker/humble/compose.yaml build` then
+  `... run --rm cell bash`; on the accelerator, build with
+  `--packages-skip isaac_trajectory_bridge sim_moveit_bringup ur5e_moveit_config cell_backend_sim`.
+
+## 10. Planned (executor baseline, not built yet)
+
+From `docs/EXECUTOR_BASELINE.md`, so the target shape is visible here:
+
+- **Task records** for the agent (EB2 remainder): `task.yaml`, an environment
+  declaration and a robot composite in the labmate's schemas, generated from this
+  cell's config.
+- **Lab verbs** (EB3): `lab__*` tools in the Kit bridge (resolve, checkpoint and
+  restore, set, reset_scene, rest and contact checks, cameras, verify_assembly,
+  move_robot), each publishing a lab event so the WatchDog does not mistake a
+  teleport for physics; `Worker.move_joints`/`jog` for planners.
+- **Authoring container** (EB4) from `docker/humble/`, mounts `/app` and `/data`.
+- **Prompts** (EB5): the labmate's `platform.md`, `assembly.md` and docs rewritten for this cell.
+- **Platform MCP** (EB6): `evaluate_planner` (1-3 episodes, budget 18), `submit_work`, delivery check.
+- **WatchDog in the lab** (EB7): consultations through tool results and
+  `read_consultations`; `request_consultation` from the agent or the planner.
+
+## 11. Where the pieces come from
+
+Three sources, recorded file by file in `docs/PROVENANCE.md` and summarised in
+`docs/PROGRESS.md` ("From the labmate's work, and what we added"):
+
+- **WatchDog_V1** (`/home/mohammad/watchdog/WatchDog_V1`, commit `595ede33`):
+  copied in M2 and since reshaped: the ROS workspace, the WatchDog agent and its
+  MCP server, the robot and stage assets.
+- **The labmate's work**: DroidStack (unlicensed) as *ideas only* (one-tool
+  planner, facts journal, authoring loop, Kit command server, budgets,
+  manifest); prompt-to-assembly (Apache-2.0) as *data* in `benchmark/` (fmb1's
+  bundles, seats and symmetries are on the stage and in the placements file).
+- **Written here**: everything else, including the platform layer, planning
+  service, episode runner, authoring MCP, planner templates, physical events,
+  command server, and the fmb1 stage tooling.

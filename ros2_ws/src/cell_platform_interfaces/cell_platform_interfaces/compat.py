@@ -1,7 +1,7 @@
 """Humble / Jazzy differences, isolated in one place.
 
 Everything the shared packages do differently per distro goes through a
-function here, and docs/PLATFORMS.md lists the same items. Keep this module
+function here, and docs/ARCHITECTURE.md (Platforms) lists the same items. Keep this module
 free of ROS imports at module level so launch files and tests can use it.
 
 Known differences handled:
@@ -9,14 +9,14 @@ Known differences handled:
                          mcap on Jazzy; the cell always records mcap.
     set_if_present       message fields that exist on one distro only
                          (moveit_msgs MotionPlanRequest.pipeline_id on Humble
-                         needs verifying; see BUILD_PLAN section 5.3).
+                         needs verifying; see docs/ARCHITECTURE.md, Platforms).
     python_baseline_ok   the shared code must run on 3.10 (Humble) and 3.12 (Jazzy).
 
 APIs the shared packages must not use, because they do not exist on Humble:
     rclpy.wait_for_message (Iron+), Node.create_timer(autostart=...) (Jazzy),
     rclpy.executors.Executor.spin_once_until_future_complete changes (Jazzy),
     moveit_configs_utils features newer than MoveIt 2.5, and any Python
-    feature newer than 3.10 (see docs/PLATFORMS.md).
+    feature newer than 3.10 (see docs/ARCHITECTURE.md, Platforms).
 """
 
 from __future__ import annotations

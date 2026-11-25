@@ -111,6 +111,32 @@ def load_placements(repo_root: str | Path, assembly: str | None = None) -> dict[
     return out
 
 
+def parse_symmetries(data: dict[str, Any], where: str = "placements") -> dict[str, list[tuple[Vec, Quat]]]:
+    """part id -> its proper symmetries other than the identity, each (position, orientation_xyzw)
+    in the part's own frame: a part at frame (x) S occupies what it occupies at the frame."""
+    out: dict[str, list[tuple[Vec, Quat]]] = {}
+    for pid, entries in (data.get("symmetries") or {}).items():
+        syms = []
+        for entry in entries or []:
+            pos, ori = (entry or {}).get("position"), (entry or {}).get("orientation_xyzw")
+            if not isinstance(pos, list) or len(pos) != 3 or not isinstance(ori, list) or len(ori) != 4:
+                raise ValueError(f"{where}: symmetry of {pid!r} needs position [x,y,z] and orientation_xyzw [x,y,z,w]")
+            syms.append((tuple(float(v) for v in pos), _normalize(tuple(float(v) for v in ori))))
+        out[str(pid)] = syms
+    return out
+
+
+def load_symmetries(repo_root: str | Path, assembly: str | None = None) -> dict[str, list[tuple[Vec, Quat]]]:
+    """The `symmetries` of every config/placements/*.yaml (or only <assembly>.yaml), merged by part id."""
+    folder = Path(repo_root) / "config" / "placements"
+    files = [folder / f"{assembly}.yaml"] if assembly else sorted(folder.glob("*.yaml"))
+    out: dict[str, list[tuple[Vec, Quat]]] = {}
+    for path in files:
+        if path.is_file():
+            out.update(parse_symmetries(yaml.safe_load(path.read_text(encoding="utf-8")) or {}, str(path)))
+    return out
+
+
 def derive_into(poses: dict[str, dict[str, Any]], placements: dict[str, Placement]) -> list[str]:
     """Add (or replace) each placement in a {id: {"position": [...],
     "orientation_xyzw": [...]}} map from its fixture's entry; returns the ids
