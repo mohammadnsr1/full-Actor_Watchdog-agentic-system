@@ -4,8 +4,9 @@ Written 2026-11-23 (Milestone 7), updated 2026-11-25 (executor baseline, EB2).
 How the code and files connect, from the simulator and ROS 2 up to the two
 agents. Kept current as the project moves; the history is in
 `docs/PROGRESS.md`. Diagrams are plain text so they show everywhere (editor,
-preview, terminal); a poster version is `docs/diagrams/architecture_roadmap.svg`
-(`docs/diagrams/make_architecture_roadmap.py`).
+preview, terminal). Drawn figures (SVG + PNG) are in `docs/diagrams/`: 01 overview,
+02 architecture, 03 episode, 04 executor baseline, 05 assembly pipeline, 06 roadmap;
+regenerate with `python3 docs/diagrams/make_diagrams.py`.
 
 Two agents never talk to each other:
 

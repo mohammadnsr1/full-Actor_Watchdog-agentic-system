@@ -154,3 +154,13 @@ def test_world_changing_verbs_wait_for_the_episode(tmp_path):
         fcntl.flock(holder, fcntl.LOCK_UN)
         holder.close()
     assert lab.set({"gripper": 0.1})["ok"]
+
+
+def test_verify_assembly_loads_the_checker_and_placements():
+    class S:
+        def _cmd_report_poses(self, _p):
+            return {"poses": {"base1": {"position": [0.4028, -0.1986, 0.0224], "orientation_xyzw": Q0}}}
+
+    r = LB.Lab(S(), FakeKit(), lambda: "t").verify_assembly({})
+    assert r["ok"] and not r["pass"] and r["parts_required"] == 4
+    assert {v["status"] for v in r["parts"].values()} == {"missing"}

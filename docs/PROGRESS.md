@@ -50,6 +50,7 @@ not vary the start).
 | 2026-11-24 | Decision: the executor is the research baseline and mirrors the labmate's setup (EB1-EB8). EB1: `benchmark/` pinned at prompt-to-assembly `f36678cb`. Found this cell's `fmb_assembly_2` *is* the labmate's fmb1. fmb1's parts put on the stage, Board 2 removed. Old stage `m7-given-s0`: 3/4; first fmb1 episode `fmb1-given-s0`: 0/4, diagnosed from the bag. Fixes: kinematic base, depenetration cap, speculative CCD, hover-then-descend, in-hand correction. |
 | 2026-11-25 (morning) | Stage rebuilt and stripped of 176 saved render products; placement frames re-derived from fmb1's seats; RG2 model confirmed correct (an analysis error of mine had blamed it); `fmb1-given-s1` 4/4. Checker and WatchDog acceptance accept the swapped U pair and each part's proven symmetries. |
 | 2026-11-25 (later) | Docs reorganised (this file). EB2 task records in the labmate's shapes (`task_data/`, generated). EB3: twelve lab verbs on the command server and the Kit bridge (`lab__*`), host `move_robot`/`robot_health`, `/cell/lab_events`, `Worker.move_joints`/`jog`. EB4: Jazzy authoring container and `runner/run_baseline.sh`. EB5: baseline prompt layers and six docs. EB6: platform MCP (delivery check, budget 18, evidence, submission). All offline-tested; live check next. |
+| 2026-11-25 (evening) | `docs/diagrams/` redrawn as six figures (overview, architecture, episode, executor baseline, assembly pipeline, roadmap) from `make_diagrams.py`; the single poster was removed. |
 
 ## Episodes so far
 

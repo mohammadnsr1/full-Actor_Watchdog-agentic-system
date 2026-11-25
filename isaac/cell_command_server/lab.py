@@ -365,6 +365,8 @@ class Lab:
         spec = importlib.util.spec_from_file_location(
             "_lab_placements", root / "ros2_ws/src/cell_platform_interfaces/cell_platform_interfaces/placements.py")
         P = importlib.util.module_from_spec(spec)
+        import sys
+        sys.modules[spec.name] = P          # dataclasses look their module up while the class is built
         spec.loader.exec_module(P)
         assembly = str(p.get("assembly", "fmb_assembly_2"))
         req = yaml.safe_load((root / "config/requirements" / f"{assembly}.yaml").read_text())
