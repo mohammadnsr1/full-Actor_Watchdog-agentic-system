@@ -24,10 +24,11 @@ tools/pick_check.py on 2026-11-17):
 Carrying and inserting (2026-11-24, after records/fmb1-given-s0):
 
     in hand       = TCP^-1 (x) part, both measured with the arm at rest (TF and
-                    the pose channel). The grasp is never the planned one: in
-                    records/fmb1-given-s0 every part hung 6-15 mm further along
-                    the TCP's Z than tcp_for's RG2 model puts it (more for wider
-                    grasps), so planned inserts aimed that far into the seat
+                    the pose channel). The grasp is never exactly the planned
+                    one: in records/fmb1-given-s0 the fingers' midpoint moved
+                    1.1-2.3 mm along the TCP's X as they closed (one finger
+                    touches first), against a slot play of about +-1.4 mm. The
+                    RG2 table itself matched the sim's contact frames to 0.7 mm
     TCP target    = object target (x) (in hand)^-1, so the PART lands on the
                     target, not the planned grasp; a part that moved more than
                     SLIP_LIMIT_M / SLIP_LIMIT_DEG in the hand since the first

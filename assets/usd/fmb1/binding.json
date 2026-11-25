@@ -168,31 +168,68 @@
         "world_vertex_dev_mm": 3.7935078376652573e-06,
         "collider_box_vs_mesh_box_mm": 2.634525320122094e-06,
         "mass_kg": 0.8903079628944397,
-        "inertia_max_abs_diff": 5.97722629204489e-10
+        "inertia_max_abs_diff": 5.97722629204489e-10,
+        "cell_physics": {
+          "physxRigidBody:maxDepenetrationVelocity": 0.5,
+          "physxRigidBody:enableSpeculativeCCD": true,
+          "physics:kinematicEnabled": true
+        }
       },
       "u_brown": {
         "world_vertex_dev_mm": 1.2735285591591235e-06,
         "collider_box_vs_mesh_box_mm": 1.681414826815164e-06,
         "mass_kg": 0.09518250077962875,
-        "inertia_max_abs_diff": 0.0
+        "inertia_max_abs_diff": 0.0,
+        "cell_physics": {
+          "physxRigidBody:maxDepenetrationVelocity": 0.5,
+          "physxRigidBody:enableSpeculativeCCD": true
+        },
+        "placement_vs_fmb1_seat": {
+          "mm": 0.0,
+          "deg": 0.0
+        }
       },
       "u_orange": {
         "world_vertex_dev_mm": 1.2735285555856793e-06,
         "collider_box_vs_mesh_box_mm": 1.6814148129373763e-06,
         "mass_kg": 0.09518250077962875,
-        "inertia_max_abs_diff": 0.0
+        "inertia_max_abs_diff": 0.0,
+        "cell_physics": {
+          "physxRigidBody:maxDepenetrationVelocity": 0.5,
+          "physxRigidBody:enableSpeculativeCCD": true
+        },
+        "placement_vs_fmb1_seat": {
+          "mm": 0.0,
+          "deg": 0.0
+        }
       },
       "line_green": {
         "world_vertex_dev_mm": 1.1457918339408154e-06,
         "collider_box_vs_mesh_box_mm": 0.0,
         "mass_kg": 0.11739175021648407,
-        "inertia_max_abs_diff": 6.523092127759013e-11
+        "inertia_max_abs_diff": 6.523092127759013e-11,
+        "cell_physics": {
+          "physxRigidBody:maxDepenetrationVelocity": 0.5,
+          "physxRigidBody:enableSpeculativeCCD": true
+        },
+        "placement_vs_fmb1_seat": {
+          "mm": 0.0,
+          "deg": 0.0
+        }
       },
       "inverted_u_yellow": {
         "world_vertex_dev_mm": 2.0861625482648805e-06,
         "collider_box_vs_mesh_box_mm": 4.857778623801323e-07,
         "mass_kg": 0.09837239980697632,
-        "inertia_max_abs_diff": 0.0
+        "inertia_max_abs_diff": 0.0,
+        "cell_physics": {
+          "physxRigidBody:maxDepenetrationVelocity": 0.5,
+          "physxRigidBody:enableSpeculativeCCD": true
+        },
+        "placement_vs_fmb1_seat": {
+          "mm": 0.0,
+          "deg": 0.0
+        }
       }
     },
     "tf_targets": [
@@ -214,7 +251,7 @@
       "/World/line_green/fmb1_occurrence_02",
       "/World/inverted_u_yellow/fmb1_occurrence_03"
     ],
-    "stage_sha256": "93b4834c8933efaf3fb8df850fda8a345acbdeaa6ea225a6e0d16f11bfbaea09",
-    "previous_stage": "git (the committed assets/usd/assembly_room.usd); a copy was left at /tmp/claude-1000/-home-mohammad-full-Actor-Watchdog-agentic-system/1053df2c-2118-49f7-830d-60ac91117e07/scratchpad/assembly_room.before_fmb1.usd"
+    "stage_sha256": "97ecfc818318fe11b89a5d03d218ac02cbc85060ee90b85c61f72d6ac35b5d8c",
+    "previous_stage": "git: cd4d6c7 (before fmb1); rebuilt 2026-11-25 from it, then tools/clean_stage_render.py"
   }
 }

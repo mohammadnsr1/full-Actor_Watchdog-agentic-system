@@ -6,7 +6,7 @@ Run with Isaac Sim's own USD (0.24.5), so the stage is written by the library th
 reads it, not by a newer usd-core:
 
     L=$(ls -d ~/isaacsim/extscache/omni.usd.libs-*)
-    PYTHONPATH=$L LD_LIBRARY_PATH=$L/bin ~/isaacsim/python.sh tools/build_fmb1_stage.py [--check-only | --cell-physics]
+    PYTHONPATH=$L LD_LIBRARY_PATH=$L/bin ~/isaacsim/python.sh tools/build_fmb1_stage.py [--check-only | --cell-physics | --placements]
 
 Prim names and prim frames stay as they are, so every pose, placement, grasp offset
 and mesh in the configs keeps its meaning. For each Board 1 prim in
@@ -20,14 +20,16 @@ assets/usd/fmb1/binding.json it:
      the prim's colour from /World/Looks.
 Then it deletes the Board 2 prims and their reorient frames, and sets the TF publisher's
 targets: Board 2 targets out, the five fmb1 frames in (published as fmb1_occurrence_NN).
-Last it authors CELL_PHYSICS (below); --cell-physics does only that, on a stage that
-already carries the fmb1 parts.
+Last it authors CELL_PHYSICS and the placement frames derived from fmb1's assembled state
+(below), and writes the same placements to config/placements/fmb_assembly_2.yaml;
+--cell-physics and --placements do only that, on a stage that already carries the fmb1 parts.
+tools/clean_stage_render.py strips render products Isaac saved into the stage.
 
 Checks (always, and alone with --check-only): every part's visual mesh lands in world
 where the old mesh was (max vertex distance), collider boxes cover the mesh box, mass
 props equal the bundle's, no rigid body is nested, no Board 2 prim or target is left,
-every TF target resolves, CELL_PHYSICS is in place. Writes the measured numbers into
-binding.json.
+every TF target resolves, CELL_PHYSICS is in place, every placement frame is fmb1's seat.
+Writes the measured numbers into binding.json.
 """
 import argparse
 import hashlib
@@ -62,6 +64,89 @@ CELL_PHYSICS = {
           "physxRigidBody:enableSpeculativeCCD": (Sdf.ValueTypeNames.Bool, True)},
     "base1": {"physics:kinematicEnabled": (Sdf.ValueTypeNames.Bool, True)},
 }
+
+
+# Placement frames (2026-11-25, Mohammad: "derive them again"): /World/<FIXTURE>/<part>_placement is
+# the part prim's pose, in the fixture prim's frame, with the part seated as in fmb1's assembled
+# state (fmb1.assembly-graph.json occurrence assembled_pose, through the binding's prim<-object
+# transforms). The earlier frames were measured on the old stage and sat 1-6.55 mm above these
+# seats, with line_green and inverted_u_yellow overlapping 5.55 mm. The same numbers go to the
+# WatchDog's config/placements/fmb_assembly_2.yaml.
+GRAPH = os.path.join(REPO, "benchmark/assemblies/fmb1/artifacts/fmb1.assembly-graph.json")
+PLACEMENTS_YAML = os.path.join(REPO, "config/placements/fmb_assembly_2.yaml")
+FIXTURE = "base1"
+
+
+def _rigid(R, t):
+    return [list(R[0]) + [t[0]], list(R[1]) + [t[1]], list(R[2]) + [t[2]], [0.0, 0.0, 0.0, 1.0]]
+
+
+def _mul(A, B):
+    return [[sum(A[i][k] * B[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+
+
+def _inv(M):
+    Rt = [[M[j][i] for j in range(3)] for i in range(3)]
+    t = [-sum(Rt[i][k] * M[k][3] for k in range(3)) for i in range(3)]
+    return _rigid(Rt, t)
+
+
+def derive_placements(binding):
+    """{part: (t, (w, x, y, z))}: the seated part prim in the fixture prim's frame, from fmb1."""
+    nodes = json.load(open(GRAPH))["nodes"]
+
+    def asm(occ):
+        p = nodes[occ]["payload"]["assembled_pose"]
+        return _rigid(p["rotation_row_major"], p["translation_m"])
+
+    def prim_from_object(name):
+        p = binding["parts"][name]
+        return _rigid(p["R_prim_from_object"], p["t_prim_from_object_m"])
+
+    fixture_from_assembly = _mul(prim_from_object(FIXTURE), _inv(asm(binding["parts"][FIXTURE]["occurrence"])))
+    out = {}
+    for name, p in binding["parts"].items():
+        if name == FIXTURE:
+            continue
+        M = _mul(_mul(fixture_from_assembly, asm(p["occurrence"])), _inv(prim_from_object(name)))
+        q = quat_from_R([row[:3] for row in M[:3]])
+        w, (x, y, z) = q.GetReal(), q.GetImaginary()
+        if w < 0:
+            w, x, y, z = -w, -x, -y, -z
+        clean = lambda v: 0.0 if abs(v) < 1e-12 else v
+        out[name] = ([clean(M[i][3]) for i in range(3)], tuple(clean(v) for v in (w, x, y, z)))
+    return out
+
+
+def apply_placements(lay, placements):
+    for name, (t, q) in placements.items():
+        spec = lay.GetPrimAtPath(f"/World/{FIXTURE}/{name}_placement")
+        if spec is None:
+            sys.exit(f"/World/{FIXTURE}/{name}_placement not in the stage root layer")
+        set_attr(spec, "xformOp:translate", Sdf.ValueTypeNames.Double3, Gf.Vec3d(*t))
+        set_attr(spec, "xformOp:orient", Sdf.ValueTypeNames.Quatd, Gf.Quatd(q[0], q[1], q[2], q[3]))
+
+
+def write_placements_yaml(placements):
+    lines = [
+        f"# Placements of fmb_assembly_2 relative to its fixture ({FIXTURE}): WATCHDOG SIDE ONLY.",
+        "# Read by cell_platform_interfaces.placements. The executor's settings deny this file.",
+        "# Since 2026-11-25 derived, not measured: fmb1's assembled poses through assets/usd/fmb1/binding.json,",
+        "# written with the stage's /World/base1/*_placement frames by tools/build_fmb1_stage.py --placements.",
+        "# tools/measure_placements.py on the running sim reproduces them (it reads those frames).",
+        "assembly: fmb_assembly_2",
+        f"fixture: {FIXTURE}",
+        "derived:",
+        "  tool: tools/build_fmb1_stage.py --placements",
+        "  source: benchmark/assemblies/fmb1/artifacts/fmb1.assembly-graph.json (occurrence assembled_pose)",
+        "  binding: assets/usd/fmb1/binding.json",
+        "placements:",
+    ]
+    for name, (t, (w, x, y, z)) in placements.items():
+        lines += [f"  {name}_placement:", "    position:"] + [f"    - {round(v, 9)!r}" for v in t]
+        lines += ["    orientation_xyzw:"] + [f"    - {round(v, 9)!r}" for v in (x, y, z, w)]
+    with open(PLACEMENTS_YAML, "w") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def cell_physics_for(name):
@@ -329,6 +414,17 @@ def check(stage_path, binding, old_world=None, bundle_root_attrs=None):
         if nested:
             problems.append(f"{name}: nested rigid bodies {nested}")
         report[name] = r
+    for name, (t, q) in derive_placements(binding).items():
+        pl = st.GetPrimAtPath(f"/World/{FIXTURE}/{name}_placement")
+        if not pl.IsValid():
+            problems.append(f"{name}_placement missing"); continue
+        gt, gq = pl.GetAttribute("xformOp:translate").Get(), pl.GetAttribute("xformOp:orient").Get()
+        dt = max(abs(gt[i] - t[i]) for i in range(3)) * 1000.0
+        dq = Gf.Quatd(q[0], q[1], q[2], q[3]).GetInverse() * Gf.Quatd(gq.GetReal(), *gq.GetImaginary())
+        da = math.degrees(2 * math.acos(min(1.0, abs(dq.GetReal()))))
+        report.setdefault(name, {})["placement_vs_fmb1_seat"] = {"mm": dt, "deg": da}
+        if dt > 1e-6 or da > 1e-6:
+            problems.append(f"{name}_placement is {dt:.4f} mm / {da:.4f} deg from fmb1's seat (run --placements)")
     for b in BOARD2:
         if st.GetPrimAtPath(f"/World/{b}").IsValid():
             problems.append(f"Board 2 prim /World/{b} still on the stage")
@@ -346,16 +442,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-only", action="store_true")
     ap.add_argument("--cell-physics", action="store_true", help="author CELL_PHYSICS on a stage that already has fmb1")
+    ap.add_argument("--placements", action="store_true",
+                    help="author the fmb1-derived placement frames (and the WatchDog's placements file) "
+                         "on a stage that already has fmb1")
     args = ap.parse_args()
     binding = json.load(open(BINDING))
     print("USD", Usd.GetVersion())
-    if args.cell_physics:
+    if args.cell_physics or args.placements:
         lay = Sdf.Layer.FindOrOpen(STAGE)
         if not any(str(pl.assetPath).startswith("./fmb1/") for pl in lay.GetPrimAtPath("/World/base1").payloadList.prependedItems):
             sys.exit("the stage does not carry the fmb1 parts yet; run without flags first")
-        applied = apply_cell_physics(lay, binding)
+        if args.cell_physics:
+            print("authored:", json.dumps(apply_cell_physics(lay, binding)))
+        if args.placements:
+            placements = derive_placements(binding)
+            apply_placements(lay, placements)
+            write_placements_yaml(placements)
+            print("placements:", json.dumps(placements))
         lay.Save()
-        print("authored:", json.dumps(applied))
         args.check_only = True
     if args.check_only:
         attrs = {}
@@ -385,7 +489,10 @@ def main():
     lay.Reload(force=True)
     before, after = edit_stage(lay, binding, attrs)
     apply_cell_physics(lay, binding)
+    placements = derive_placements(binding)
+    apply_placements(lay, placements)
     lay.Save()
+    write_placements_yaml(placements)
     print(f"TF targets {before} -> {after}")
     problems, report, targets = check(STAGE, binding, old_world, attrs)
     binding["built"] = {"by": "tools/build_fmb1_stage.py", "usd": list(Usd.GetVersion()),

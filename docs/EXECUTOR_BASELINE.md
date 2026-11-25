@@ -129,12 +129,17 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
   Independent check: geometry, poses of all child frames, mass, inertia, CoM,
   materials and TF targets all as intended.
 - **Found, not changed:**
-  - Our seated placement frames sit above fmb1's CAD seats: U parts +2.0 mm,
-    inverted U +1.0 mm, `line_green` +6.55 mm (Body1 frame). fmb1's acceptance band
-    is 1 mm, so a checker using fmb1's seats would fail our placements and vice
-    versa. Re-deriving `/World/base1/*_placement` and
-    `config/placements/fmb_assembly_2.yaml` from fmb1's assembled poses is a
-    separate decision (it moves the WatchDog's targets).
+  - Our seated placement frames sat above fmb1's CAD seats: U parts +2.0 mm,
+    inverted U +1.0 mm, `line_green` +6.55 mm (Body1 frame), and `line_green` and
+    `inverted_u_yellow` overlapped 5.55 mm at them. **Re-derived 2026-11-25**
+    (Mohammad: "derive them again"): `tools/build_fmb1_stage.py --placements`
+    writes fmb1's assembled poses, through `binding.json`, to
+    `/World/base1/*_placement` and `config/placements/fmb_assembly_2.yaml`; its
+    check holds them there. With the real colliders every part touches base1 at
+    its frame and none overlaps another. Sideways moves: `inverted_u_yellow` 1.0 mm
+    (to the slot centre), `line_green` 0.5 mm, the U pair 0.1-0.2 mm. The
+    `place_u_brown` / `place_u_orange` steps keep their -0.5 mm `x` target offsets
+    (task file, tuned on the old frames).
   - The labmate's resolver composes part-graph features (STEP frame) with
     occurrence placements (centroid frame), which reads as 16.7 mm off for Body1
     features; to verify before the prompts point the agent at `frame()`/`locate()`.
@@ -157,11 +162,19 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
   3. `line_green` came to rest on the jammed `u_orange`; the `inverted_u_yellow`
      insert pressed into the pile and PhysX resolved the box overlap by throwing
      `line_green` 4.9 m (no depenetration velocity cap).
-  4. Every part hung 6-15 mm further along the TCP's Z than the RG2 model in
-     `robot_backend.utils.rg2_geometry` puts it (6.5 mm at 20 mm jaw width, 9.8 at
-     25.8, 12.7 at 42.7; the steps' `grasp_width_m` is not the closed width), so the
-     planned inserts aimed that far below the seat: the template pressed parts into
-     the base, which is also why base1 moved in the old runs.
+  4. ~~Every part hung 6-15 mm further along the TCP's Z than the RG2 model.~~
+     **Wrong, corrected 2026-11-25.** That analysis imported `robot_backend` from
+     the install tree without the ROS environment, where `rg2_geometry` cannot
+     find `rg2_calibration_table.csv` and silently uses its linear open/closed
+     fallback, which is 6.5 / 8.0 / 12.4 mm short of the table at 21 / 26 / 43 mm.
+     The executor had the table: the TCP reached the table-based grasp target to
+     0.01 mm, the sim's finger contact frames sat where the table puts the grasp
+     centre (within 0.5 mm; 0.7 mm for the 43 mm grasp), and every part stayed
+     within ~2 mm of the planned grasp until its insert touched something. The
+     real in-hand error is along the TCP's X: the fingers' midpoint moves 1.1-2.3
+     mm as they close (one finger touches first), against the slot's +-1.4 mm.
+     The in-hand correction below removes that; `common/geometry.tcp_for` now
+     refuses to run without the table.
 
   Fixed (Mohammad: "both"): stage `CELL_PHYSICS` in `tools/build_fmb1_stage.py`
   (`--cell-physics`: maxDepenetrationVelocity 0.5 m/s and speculative CCD on the five
@@ -171,9 +184,11 @@ robot, RG2 and controllers, so none of their robot, environment or asset files):
   (`Worker.tcp_pose()` + the pose channel, arm at rest) and targets the TCP so the
   part lands on the target, stopping if the part moved >10 mm / 15 deg since the
   grasp. Offline: a fake-worker run lands all four parts exactly; tests 483 pass.
-  Still open: the commented `u_orange` approach offset (Mohammad's task file, left
-  as is; the hover covers it); the RG2 model's 6-15 mm (pick targets use it too);
-  placements 1-6.55 mm above the seats now mean a drop of that much at release.
+  Settled 2026-11-25 with Mohammad: the commented `u_orange` approach offset stays
+  (the hover covers it); placements re-derived (above); the RG2 model is right
+  (item 4 corrected); base1 kinematic means "base moved" cannot fail, accepted.
+  The stage was also rebuilt from cd4d6c7 and stripped of 176 render products
+  Isaac had saved into it (`tools/clean_stage_render.py`).
 - `tasks/fmb_assembly_2/task.yaml` in their schema, the subset this cell uses:
   roles, starting scene, goal target, `mate_realization` (all physical-only),
   tolerances, layouts (regions anchored on our table, base1 static, seeded

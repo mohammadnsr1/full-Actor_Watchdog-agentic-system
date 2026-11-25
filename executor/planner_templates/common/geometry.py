@@ -51,8 +51,15 @@ def along_own_z(pose: dict[str, Any], distance_m: float) -> dict[str, Any]:
 
 
 def tcp_for(center: dict[str, Any], width_m: float) -> dict[str, Any]:
-    from robot_backend.utils.rg2_geometry import tcp_target_from_grasp_center
+    from robot_backend.utils.rg2_geometry import load_rg2_grasp_offset_lookup, tcp_target_from_grasp_center
 
+    # Without the calibration table (isaac_trajectory_bridge/config/rg2_calibration_table.csv, found
+    # through the ament index or the source tree) rg2_geometry falls back to a straight line between
+    # its open and closed offsets, which is 6.5 mm short of the table at 21 mm jaw width and 12.4 mm
+    # at 43 mm. A TCP target from that would put every grasp and insert that far off, silently.
+    if load_rg2_grasp_offset_lookup() is None:
+        raise RuntimeError("tcp_for: the RG2 calibration table was not found (source ros2_ws/install/setup.bash); "
+                           "refusing the linear fallback")
     return tcp_target_from_grasp_center(center, float(width_m))
 
 

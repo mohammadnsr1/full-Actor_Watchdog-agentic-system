@@ -10,7 +10,8 @@ connects: `docs/ARCHITECTURE.md`.
   EB1-EB8: `docs/EXECUTOR_BASELINE.md`. EB1 (`benchmark/`, git-ignored) done; FMB CAD split
   per part in `assets/cad/fmb/`; fmb_assembly_2 turned out to be the labmate's
   fmb1 (FMB Board 1 at 0.7). EB2: fmb1 is on the stage (Board 2 removed);
-  first episode on it failed, fixed offline, live re-check below.
+  first episode on it failed, fixed offline; stage rebuilt and placements re-derived
+  from fmb1's seats 2026-11-25; live re-check below.
 - M1 to M6: done and checked (M6 live checks below).
 - M7 sim side: built and unit-tested here; the live checks below are next.
   Nothing since your last commit is committed. Hardware side of M7 follows.
@@ -21,30 +22,44 @@ Steps 1-5 done 2026-11-24. Steps 1-4 passed (verify_reset errors under 0.02 mm).
 Step 5 episode `records/fmb1-given-s0` failed 0/4 (the old stage's `m7-given-s0`
 placed 3/4): diagnosis and fixes in `docs/EXECUTOR_BASELINE.md`, "fmb1-given-s0".
 
-## Live check: after the fmb1-given-s0 fixes (2026-11-24)
+## Live check: after the fmb1-given-s0 fixes (2026-11-24, stage redone 2026-11-25)
 
-Changed offline since fmb1-given-s0: the stage (`base1` kinematic, depenetration
-capped at 0.5 m/s, speculative CCD on the five parts), `isaac/common/kit_api.py`
-(no velocity writes on kinematic bodies), the plan-given template (hover, then
-straight descent; in-hand correction before each descent) and `Worker.tcp_pose()`.
+Changed offline since fmb1-given-s0 (aac7ee7 has the first part): the stage
+(`base1` kinematic, depenetration capped at 0.5 m/s, speculative CCD on the five
+parts), `isaac/common/kit_api.py` (no velocity writes on kinematic bodies), the
+plan-given template (hover, then straight descent; in-hand correction before each
+descent) and `Worker.tcp_pose()`. Then on 2026-11-25:
+- the stage was rebuilt from cd4d6c7 with `tools/build_fmb1_stage.py` (same result
+  as aac7ee7 for every part, physics value, graph and TF target) and cleaned of
+  the render products Isaac had saved into it (176 `Replicator_*` RenderProducts
+  under `/Render`, 3 more since your last save; `tools/clean_stage_render.py`);
+- the four placement frames on the stage and `config/placements/fmb_assembly_2.yaml`
+  are now fmb1's seats (`build_fmb1_stage.py --placements`): 2.0 mm lower for the
+  U pair, 6.55 mm for `line_green`, 1.0 mm for `inverted_u_yellow`, which also
+  moves 1.0 mm sideways to the slot centre (`line_green` 0.5 mm, U pair 0.1-0.2 mm).
+  Every part now sits in contact with base1 at its frame, none overlapping another;
+- `tcp_for` (planner templates) refuses to run without the RG2 calibration table.
 
 1. Reopen `assets/usd/assembly_room.usd` (it changed on disk; do not save the open
    copy over it), Play, then run `isaac/cell_command_server/start_in_script_editor.py`
    again (it reloads `kit_api`). Expect `base1` not to move at all, even when pushed.
+   From now on, do not save the stage from Isaac after Play unless you mean to
+   change it: each save writes that session's render products into the file.
+   `tools/clean_stage_render.py --check-only` says whether it happened again.
 2. `load_layout` + `verify_reset` (nominal, seed 0): all pass, no PhysX errors about
    velocities on a kinematic body in the Isaac console.
 3. One plan-given episode:
    `runner/episode_runner/run.sh --planner executor/planner_templates/plan_given --episode-id fmb1-given-s1`.
    Expect in `executor/planner.jsonl`: per place step a `hover` then a straight
    `approach`, and `in hand: X mm ... from the planned grasp; Y mm ... since the grasp`
-   lines (X was 6-15 mm in fmb1-given-s0; Y should stay under ~2 mm). Expect in the
-   verdict: base1 `moved_m` 0; no part thrown. Parts are now released at their
-   placement frames, which are 1-6.55 mm above fmb1's seats, so they drop that far.
-   If a step stops with "moved in the hand since the grasp", the part was knocked
-   in the gripper; send the episode folder.
+   lines with X about 1-2.5 mm (the fingers close off-centre along the TCP's X) and Y
+   under ~2 mm. Expect in the verdict: base1 `moved_m` 0; no part thrown; parts
+   released at their seats (no drop). If a step stops with "moved in the hand since
+   the grasp", the part was knocked in the gripper; send the episode folder.
 
-If anything is wrong: the stage before these physics edits is commit d5f2263
-(`git checkout d5f2263 -- assets/usd/assembly_room.usd`); before fmb1 it is cd4d6c7.
+If anything is wrong: `git checkout aac7ee7 -- assets/usd/assembly_room.usd
+config/placements/fmb_assembly_2.yaml` restores the stage and placements you
+committed; d5f2263 is the stage before the physics edits, cd4d6c7 before fmb1.
 
 ## What Milestone 7 added
 

@@ -1,52 +1,52 @@
 # Placements of fmb_assembly_2 relative to its fixture (base1): WATCHDOG SIDE ONLY.
-# Measured by tools/measure_placements.py; read by cell_platform_interfaces.placements.
-# The executor's settings deny this file.
+# Read by cell_platform_interfaces.placements. The executor's settings deny this file.
+# Since 2026-11-25 derived, not measured: fmb1's assembled poses through assets/usd/fmb1/binding.json,
+# written with the stage's /World/base1/*_placement frames by tools/build_fmb1_stage.py --placements.
+# tools/measure_placements.py on the running sim reproduces them (it reads those frames).
 assembly: fmb_assembly_2
 fixture: base1
-measured:
-  wall_time_iso: '2026-11-24T21:09:42.720066+00:00'
-  tool: tools/measure_placements.py
-  platform: sim
-  topic: /camera2/poses
-  samples_per_frame: 20
+derived:
+  tool: tools/build_fmb1_stage.py --placements
+  source: benchmark/assemblies/fmb1/artifacts/fmb1.assembly-graph.json (occurrence assembled_pose)
+  binding: assets/usd/fmb1/binding.json
 placements:
   u_brown_placement:
     position:
-    - -3.0e-06
-    - 0.047697
-    - 0.022999
-    orientation_xyzw:
-    - -0.707106
     - 0.0
-    - -0.0
-    - 0.707107
+    - 0.0476
+    - 0.021
+    orientation_xyzw:
+    - -0.707106781
+    - 0.0
+    - 0.0
+    - 0.707106781
   u_orange_placement:
     position:
-    - -3.0e-06
-    - -0.047403
-    - 0.022999
-    orientation_xyzw:
-    - -0.707106
     - 0.0
-    - -0.0
-    - 0.707107
+    - -0.0476
+    - 0.021
+    orientation_xyzw:
+    - -0.707106781
+    - 0.0
+    - 0.0
+    - 0.707106781
   line_green_placement:
     position:
-    - -0.000503
-    - -3.0e-06
-    - 0.029999
-    orientation_xyzw:
-    - 1.0e-06
     - 0.0
-    - -0.0
+    - 0.0
+    - 0.02345
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
     - 1.0
   inverted_u_yellow_placement:
     position:
-    - -3.0e-06
-    - -0.001003
-    - 0.021999
-    orientation_xyzw:
-    - -0.707106
     - 0.0
-    - -0.0
-    - 0.707107
+    - 0.0
+    - 0.021
+    orientation_xyzw:
+    - -0.707106781
+    - 0.0
+    - 0.0
+    - 0.707106781
