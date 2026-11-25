@@ -42,6 +42,7 @@ topics:
   watchdog_notices: /cell/watchdog_notices # Milestone 5
   executor_facts: /cell/executor_facts     # Milestone 7
   pad_contacts: /cell/pad_contacts         # Milestone 6
+  lab_events: /cell/lab_events             # EB3: lab verbs that change the world (std_msgs/String JSON)
   gripper_width_true: /gripper_width_true  # RG2 controller's true finger gap (sim only)
 
 motion:

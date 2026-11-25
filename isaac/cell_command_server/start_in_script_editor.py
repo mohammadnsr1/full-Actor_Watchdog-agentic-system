@@ -14,7 +14,7 @@ _old = sys.modules.get("isaac.cell_command_server.server")
 if _old is not None and getattr(_old, "_SERVER", None) is not None:
     _old._SERVER.stop()
     _old._SERVER = None
-for _name in ("isaac.common.kit_api", "isaac.cell_command_server.contacts", "isaac.cell_command_server.layouts", "isaac.cell_command_server.server"):
+for _name in ("isaac.common.kit_api", "isaac.cell_command_server.contacts", "isaac.cell_command_server.layouts", "isaac.cell_command_server.lab", "isaac.cell_command_server.server"):
     if _name in sys.modules:
         importlib.reload(sys.modules[_name])
 

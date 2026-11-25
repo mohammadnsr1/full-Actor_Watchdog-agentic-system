@@ -181,7 +181,7 @@ recording:
   # Per-episode MCAP bag (runner/recorder/episode_recording.py). Keys name
   # entries of the platform's topics/poses blocks; no topic is written here.
   bag:
-    topic_keys: [joint_states, tf, tf_static, watchdog_events, physical_events, watchdog_notices, executor_facts, pad_contacts]
+    topic_keys: [joint_states, tf, tf_static, watchdog_events, physical_events, watchdog_notices, executor_facts, pad_contacts, lab_events]
     pose_topic_keys: [executor_topic, watchdog_topic]
   frames:
     enabled: true
@@ -195,3 +195,13 @@ recording:
     enabled: false
 
 executor_feedback: watchdog
+
+# Executor baseline (docs/EXECUTOR_BASELINE.md, EB4/EB6): runner/run_baseline.sh.
+baseline:
+  image: cell-authoring              # docker/authoring/Dockerfile
+  platform_mcp: 127.0.0.1:9020       # executor/platform_mcp/server.py --http (host side)
+  kit_bridge_port: 9009              # omni.kit.mcp bridge in Isaac (lab verbs: isaac/lab_tools)
+  model: claude-sonnet-5             # one fixed model for both conditions (decision 7); MODEL= overrides
+  wall_s: 28800                      # 8 h, as the labmate's
+  budget_episodes: 18                # evaluate_planner budget
+  read_only_root: true               # the container's root filesystem; tmpfs for Claude's own state

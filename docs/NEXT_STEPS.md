@@ -8,26 +8,77 @@ The executor-baseline plan and decisions: `docs/EXECUTOR_BASELINE.md`.
 
 - Sim cell, fmb1 stage: the plan-given template places 4/4 (`fmb1-given-s1`,
   seeds 0 and 2). The nominal layout has no jitter, so seeds do not vary the start yet.
-- EB1 done. EB2: stage, seats and checker done; task records next.
-- Not committed since e4071bc: the checker and WatchDog acceptance modulo
-  symmetry and the interchangeable U pair (`runner/episode_runner/checker.py`,
-  `robot_backend/watchdog/requirements.py`, `cell_platform_interfaces/placements.py`,
-  `config/requirements/fmb_assembly_2.yaml`, `config/placements/fmb_assembly_2.yaml`
-  `symmetries`, `tools/build_fmb1_stage.py`), and this docs reorganisation
-  (`PROGRESS.md` new; `BUILD_PLAN.md`, `INTEGRATION_SURVEY.md`, `PLATFORMS.md`
-  removed, their live parts moved into `ARCHITECTURE.md`, `PROGRESS.md` and the
-  hardware list below). `cell_platform_interfaces` and `robot_backend` were
-  rebuilt (`colcon build --packages-select ...`) so the runner and WatchDog use them.
+- Built offline 2026-11-25, **waiting for the live check below**: EB2 (task records,
+  checker modulo symmetry and the interchangeable U pair), EB3 (lab verbs in Kit and on
+  the host, lab events), EB4 (authoring container and session launcher), EB5 (baseline
+  prompt layers and docs), EB6 (platform MCP: delivery check, budgeted evaluation,
+  submission). Nothing since caf08cc is committed.
+- Rebuilt here (`colcon build --packages-select ...`): `cell_platform_interfaces`,
+  `robot_backend`, `cell_backend_sim`, `sim_moveit_bringup`.
 
-## Next
+## Live check: EB3, EB4, EB6 (2026-11-25)
 
-1. **EB2, task records** (in progress): `tasks/fmb_assembly_2/task.yaml`, an
-   environment declaration and a robot composite in the labmate's schemas,
-   generated from `config/platforms/sim.yaml` so names stay in one place; the
-   agent reads them under `/data` (EB4/EB5).
-2. **EB3, lab verbs**, then EB6 platform MCP, EB4 container, EB5 prompts, EB7
-   WatchDog in the lab, EB8 protocol (`docs/EXECUTOR_BASELINE.md` section 4).
-3. **M8**: supervisor, operations doc, records index; budgets and health thresholds.
+From the repo root. Expected results after each step.
+
+**A. Restart the cell with the new pieces**
+
+1. Isaac down: register the lab verbs with the Kit bridge (once):
+   `python3 ~/omni-kit-mcp/scripts/install.py add-project --path $PWD/isaac --module lab_tools`
+2. Start Isaac, open the stage, Play, run `isaac/cell_command_server/start_in_script_editor.py`.
+   `printf '{"command":"list_commands"}\n' | nc -N 127.0.0.1 9010` lists twelve `lab_*` commands.
+   `python3 -m kit_mcp.client --list-bridges` shows the bridge on 9009;
+   `python3 -m kit_mcp.client list_tools` (from `~/omni-kit-mcp`) includes `lab.resolve` ... `lab.events`.
+3. Relaunch `sim_moveit_bringup` (it now also starts `lab_events_relay`).
+   `ros2 topic echo /cell/lab_events` stays quiet until step B3.
+
+**B. Lab verbs over TCP** (`nc -N 127.0.0.1 9010`, one JSON line each)
+
+1. `{"command":"lab_resolve","params":{"ref":"u_brown_placement","relative_to":"base1"}}`:
+   position about (0, 0.0476, 0.021).
+2. `{"command":"lab_checkpoint","params":{"name":"start"}}`: five objects, joints > 6.
+3. `{"command":"lab_set","params":{"objects":{"u_brown":{"position":[0.3,-0.3,0.15]}}}}`:
+   u_brown appears 15 cm up and falls; `/cell/lab_events` prints a `set` event.
+4. `{"command":"lab_rest","params":{}}` right after: `at_rest: false`; a few seconds
+   later: `true`.
+5. `{"command":"lab_contacts_arm","params":{"bodies":["u_brown"]}}`, step 3 again, then
+   `{"command":"lab_contacts_read","params":{}}`: `contact_made` with the table body.
+6. `{"command":"lab_restore","params":{"checkpoint":"start"}}`: back where it was; a
+   `restore` event.
+7. `{"command":"lab_verify_assembly","params":{}}`: `pass: false`, 0 of 4 placed.
+8. `{"command":"lab_camera_view","params":{"name":"top","eye":[0.4,-0.2,0.8],"target":[0.4,-0.2,0.0]}}`: ok.
+9. Bridge-only verbs (from `~/omni-kit-mcp`): `python3 -m kit_mcp.client lab.camera_capture '{"camera":"top"}'`
+   writes `records/lab/captures/*.png` (look at it: base1 from above);
+   `python3 -m kit_mcp.client lab.until_at_rest '{"budget_s":5}'`: `at_rest: true`.
+10. Start an episode (any template) and during it send step 3: refused, "an episode is running".
+11. Stage hygiene: after Stop, `tools/clean_stage_render.py --check-only` still says 0;
+    the lab camera is not in the stage file (session layer).
+
+**C. Platform MCP from the shell** (ROS + `ros2_ws/.venv` sourced, cell up)
+
+1. `python tools/platform_call.py check_delivery`: `ok: true`, `tools: ["execute_task"]`.
+2. `python tools/platform_call.py robot_health`: `ok: true`, arm action, planning
+   service and simulator all ready.
+3. `python tools/platform_call.py move_robot '{"tool_delta": {"position": {"z": -0.03}}}'`:
+   the TCP moves 3 cm along its own +Z (the approach axis); a `move_robot` lab event. Then `'{"joints": {"shoulder_pan_joint": 0.2}}'`: a slow pan.
+4. `python tools/platform_call.py evaluate_planner '{"episodes": 1}'`: one episode with the
+   baseline scaffold; outcome `failure` (it stops at once, `inadmissible_state`), budget
+   1 of 18 charged; `executor/workspace/baseline/_check/app/evaluations/0001/episode-1/`
+   holds `verdict.txt`, `planner.jsonl`, `runner.jsonl`, `bag/`, `frames/`.
+
+**D. The container**
+
+1. `docker build -f docker/authoring/Dockerfile --build-context kitmcp=$HOME/omni-kit-mcp -t cell-authoring .`
+   (needs docker access: `sudo usermod -aG docker $USER`, or sudo).
+2. `SHELL_ONLY=1 runner/run_baseline.sh baseline`, then inside:
+   `ls /data /app/artifact`; `ros2 topic list` shows the cell's topics;
+   `python3 -c "from robot_backend.utils import rg2_geometry as g; print(g.load_rg2_grasp_offset_lookup() is not None)"` prints True;
+   `cd /app/artifact && python3 -c "import planner; print(planner.run_task('fmb_assembly_2'))"` prints the scaffold's stop;
+   `touch /app/evaluations/x` fails (read only); `claude --version` prints 2.1.331.
+3. Optional, costs tokens: `ANTHROPIC_API_KEY=... WALL_S=900 runner/run_baseline.sh baseline`
+   for a 15-minute session; `records/authoring/<session>/transcript.jsonl` should show it
+   reading `/data`, calling `lab__*` and `platform` tools.
+
+Send the outputs that differ from these expectations.
 
 ## Run on the cell
 
@@ -64,6 +115,13 @@ AUTHORING_FEEDBACK=checker runner/run_authoring.sh sim plan_free
 ## Open items
 
 Decisions waiting on Mohammad:
+- The referee's bands (`watchdog_parts.yaml` tolerances, also told to the agent in
+  `task.yaml`): 10-20 mm and 10 deg, against fmb1's own 1 mm / 1 deg, and different for
+  the two identical U parts (u_brown 10 mm, u_orange 20 mm). A part stuck halfway into its
+  slot can be within 20 mm of its seat.
+- camera1's pose channel carries the `<part>_placement` frames in the baseline condition
+  too (the labmate's channel has object frames only; the agent has the seats in the graph
+  either way). Keep, or stop publishing them for baseline sessions.
 - Layout jitter ranges per part (`config/layouts/fmb_assembly_2/nominal.yaml`;
   base1 stays 0), needed for the 9-seed panel.
 - `place_u_brown` / `place_u_orange` keep a -0.5 mm `x` target offset tuned on the

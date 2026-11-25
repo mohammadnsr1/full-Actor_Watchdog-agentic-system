@@ -77,6 +77,7 @@ service, frame or joint name literal.
 | Executor data | the task file named by `task_ref` (section 1), `config/parts/executor_parts.yaml` (geometry, grasp force), `config/assembly_views/<assembly>/` (pictures of the finished assembly) |
 | camera1 images | `platform.camera_topic("camera1", rgb / depth / camera_info)`; the templates' `Worker.camera1()` (RGB, depth in metres, intrinsics, the optical frame's world pose) and `Worker.save_frame(label)` (into `$CELL_EPISODE_DIR/executor/images/`, returned to the authoring agent with the feedback) |
 | TCP pose | TF `frames.world` -> `frames.tcp` (robot_state_publisher on joint states; `world -> base_link` is static); the templates' `Worker.tcp_pose()`. With a part pose from the executor channel, taken with the arm at rest, it gives the part's pose in the hand (the plan-given template inserts with it) |
+| Direct motion | the templates' `Worker.move_joints(goal, duration_s?, max_speed?)` (a quintic joint path straight to the motion backend, default cap 0.5 rad/s) and `Worker.jog(delta, frame="tool"\|"world")` (a straight Cartesian TCP move); no planning and **no collision checking**: for small known moves, e.g. wiggling a part that did not go fully in (EB3) |
 | WatchDog notices | `topics.watchdog_notices` (`WatchdogNotice`), only when `config/cell.yaml watchdog.consult` is true: `halt` and the `ruling` that answers it, and `consultation` (section 6) |
 | Physical events | `topics.physical_events` (read only) |
 

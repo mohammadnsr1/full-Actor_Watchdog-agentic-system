@@ -244,7 +244,10 @@ See `docs/INDEPENDENCE.md` for each channel and where it is cut.
 | `runner/` | episode runner, recorder, launch scripts, `jsonl.py` | everything that writes `records/` |
 | `isaac/` | Kit-side code: command server, headless launch, camera setup | Isaac Sim |
 | `ros2_ws/src/` | the ROS packages in section 1, plus descriptions (`robot_description`, `onrobot_rg_description`, `ur5e_moveit_config`) and `sim_moveit_bringup` (the sim launch) | the cell |
-| `tools/` | `build_fmb1_stage.py`, `clean_stage_render.py`, `fetch_benchmark.sh`, `pick_check.py`, `split_registry.py`, `derive_plan_free_task.py`, `measure_placements.py`, `ingest/` (CAD split, its own venv) | by hand |
+| `task_data/` | this cell's task records in the labmate's shapes, generated (section 10) | the agent's `/data`, the planner's `CELL_TASK_DATA` |
+| `executor/platform_mcp/`, `executor/planner_lint.py`, `executor/prompts/baseline/` | the baseline's platform server, the shared planner lint, the baseline prompt layers and docs | `run_baseline.sh` |
+| `isaac/lab_tools/`, `docker/authoring/` | the lab verbs on the Kit bridge; the authoring container | the baseline agent |
+| `tools/` | `make_task_data.py`, `stage_task_data.py`, `platform_call.py`, `build_fmb1_stage.py`, `clean_stage_render.py`, `fetch_benchmark.sh`, `pick_check.py`, `split_registry.py`, `derive_plan_free_task.py`, `measure_placements.py`, `ingest/` (CAD split, its own venv) | by hand |
 | `benchmark/` (ignored) | the labmate's prompt-to-assembly pieces at a pinned commit (`UPSTREAM.json`) | stage build, checker data, later the agent's task data (EB4) |
 | `assets/usd/` | `assembly_room.usd` (the stage), `fmb1/` (generated part payloads + `binding.json`), robot and table assets | Isaac |
 | `assets/cad/fmb/` | FMB CAD (CC BY 4.0), split per part | reference, ingest |
@@ -329,22 +332,47 @@ One codebase, two platforms, one ROS 2 distro per graph. Platform selection is
   `... run --rm cell bash`; on the accelerator, build with
   `--packages-skip isaac_trajectory_bridge sim_moveit_bringup ur5e_moveit_config cell_backend_sim`.
 
-## 10. Planned (executor baseline, not built yet)
+## 10. The executor baseline (EB2-EB6 built 2026-11-25; EB7-EB8 to come)
 
-From `docs/EXECUTOR_BASELINE.md`, so the target shape is visible here:
+```text
+ HOST (cell)                                                     CONTAINER cell-authoring (Jazzy, host network)
+ ┌───────────────────────────────────────────────┐               ┌───────────────────────────────────────────┐
+ │ Isaac Sim + cell command server (TCP 9010)    │◄── lab_* ─────┤ Claude Code --print, prompt on stdin       │
+ │   lab.py: resolve checkpoint restore set      │               │   (executor/prompts/baseline/*)            │
+ │   reset_scene rest contacts verify camera     │               │ MCP kit      = kit-mcp gateway ──► bridge  │
+ │   lab event journal ─► lab_events_relay ─►    │               │               9009: run_python, files,     │
+ │   /cell/lab_events                            │               │               lab.* (isaac/lab_tools)       │
+ │ omni.kit.mcp bridge (9009) + isaac/lab_tools ◄┼── lab.* ──────┤ MCP platform = HTTP 127.0.0.1:9020         │
+ │ platform MCP (executor/platform_mcp, :9020)  ◄┼── platform ───┤ /app   rw   artifact/, report.md           │
+ │   check_delivery evaluate_planner submit_work │               │ /app/evaluations  ro (written by platform)  │
+ │   move_robot robot_health                     │               │ /data  ro   staged task view               │
+ │   evaluate -> runner/episode_runner/run.sh    │               │ /opt/cell ro planner-side packages, config │
+ │      -> the artifact's run.sh (execute_task)  │               │ ROS 2: the cell's topics (decision 11)      │
+ └───────────────────────────────────────────────┘               └───────────────────────────────────────────┘
+```
 
-- **Task records** for the agent (EB2 remainder): `task.yaml`, an environment
-  declaration and a robot composite in the labmate's schemas, generated from this
-  cell's config.
-- **Lab verbs** (EB3): `lab__*` tools in the Kit bridge (resolve, checkpoint and
-  restore, set, reset_scene, rest and contact checks, cameras, verify_assembly,
-  move_robot), each publishing a lab event so the WatchDog does not mistake a
-  teleport for physics; `Worker.move_joints`/`jog` for planners.
-- **Authoring container** (EB4) from `docker/humble/`, mounts `/app` and `/data`.
-- **Prompts** (EB5): the labmate's `platform.md`, `assembly.md` and docs rewritten for this cell.
-- **Platform MCP** (EB6): `evaluate_planner` (1-3 episodes, budget 18), `submit_work`, delivery check.
-- **WatchDog in the lab** (EB7): consultations through tool results and
-  `read_consultations`; `request_consultation` from the agent or the planner.
+- **Task view** (`/data`, `CELL_TASK_DATA` for the planner): `task_data/` (generated from
+  config by `tools/make_task_data.py`: `tasks/<id>/task.yaml`, the environment
+  declaration, the robot composite) plus `benchmark/assemblies/<name>/` and the prompt
+  docs, staged by `tools/stage_task_data.py`, which refuses WatchDog-side files.
+- **Lab verbs**: one implementation, `isaac/cell_command_server/lab.py`, reachable as
+  TCP commands `lab_<verb>` (host code) and as bridge tools `lab.<verb>` (the agent);
+  `camera_capture` and `until_at_rest` are bridge-only (they wait across frames).
+  World-changing verbs append to a journal that `cell_backend_sim lab_events_relay`
+  publishes on `/cell/lab_events`, and are refused while `records/.cell.lock` is held.
+- **Delivery**: `artifact/manifest.yaml` (`cell.planner-delivery/1`) + the entrypoint's
+  stdio MCP server with exactly `execute_task(task_ref)`; `check_delivery`
+  (`executor/platform_mcp/delivery.py`) checks the manifest, the contract lint
+  (`executor/planner_lint.py`) and the live tool surface before every evaluation. The
+  scaffold is `executor/planner_templates/baseline/`.
+- **Episodes** are the M7 runner's: for a `droidstack.task` record it passes the task id
+  as `task_ref`, sets `CELL_TASK_DATA`, and skips the plan-free placement-leak check.
+- **Session**: `runner/run_baseline.sh [baseline|consult]` builds
+  `executor/workspace/baseline/<session>/{app,data,session,cellroot}`, starts the platform
+  server, and runs the container for up to 8 h; records in `records/authoring/<session>/`.
+- **To come**: EB7 (the WatchDog in the lab, consultation only, and `request_consultation`),
+  the `consult` prompt layer, EB8 (protocol, metrics, the 9-seed panel), and a filtering
+  gateway in front of `run_python` (`docs/EXECUTOR_BASELINE.md` section 5).
 
 ## 11. Where the pieces come from
 

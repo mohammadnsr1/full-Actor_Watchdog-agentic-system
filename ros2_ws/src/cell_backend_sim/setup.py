@@ -22,6 +22,7 @@ setup(
         "console_scripts": [
             "ground_truth_pose_publisher = cell_backend_sim.ground_truth_pose_publisher:main",
             "pad_contacts_relay = cell_backend_sim.pad_contacts_relay:main",
+            "lab_events_relay = cell_backend_sim.lab_events_relay:main",
         ],
     },
 )

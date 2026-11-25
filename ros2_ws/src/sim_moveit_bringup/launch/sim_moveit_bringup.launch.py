@@ -456,6 +456,20 @@ def _launch_setup(context):
             if _is_truthy(LaunchConfiguration("start_pad_contacts").perform(context))
             else [LogInfo(msg="pad_contacts_relay not started (start_pad_contacts=false)")]
         ),
+        # Lab events (EB3): the lab verbs' journal from the command server onto
+        # topics.lab_events, so a teleport is a declared lab action, not physics.
+        *(
+            [
+                Node(
+                    package="cell_backend_sim",
+                    executable="lab_events_relay",
+                    name="lab_events_relay",
+                    output="screen",
+                )
+            ]
+            if _is_truthy(LaunchConfiguration("start_lab_events").perform(context))
+            else [LogInfo(msg="lab_events_relay not started (start_lab_events=false)")]
+        ),
         # The cell's timing interlock. Cell infrastructure, not agent
         # infrastructure -- it comes up with the cell so the monitoring agent
         # and executor can be started independently afterward without either
@@ -612,6 +626,11 @@ def generate_launch_description():
                 "start_pad_contacts",
                 default_value="true",
                 description="Start cell_backend_sim pad_contacts_relay (/cell/pad_contacts from the Isaac command server).",
+            ),
+            DeclareLaunchArgument(
+                "start_lab_events",
+                default_value="true",
+                description="Start cell_backend_sim lab_events_relay (/cell/lab_events from the Isaac command server).",
             ),
             DeclareLaunchArgument(
                 "start_physical_events",

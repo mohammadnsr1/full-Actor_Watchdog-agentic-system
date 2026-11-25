@@ -46,6 +46,7 @@ from typing import Any
 import yaml
 
 from isaac.cell_command_server import contacts as C
+from isaac.cell_command_server import lab as LB
 from isaac.cell_command_server import layouts as L
 from isaac.common import kit_api as K
 
@@ -103,6 +104,7 @@ class CellCommandServer:
         self._contacts_enabled = False
         self._articulation: Any = None
         self._started_wall = wall_time_iso()
+        self.lab = LB.Lab(self, K, wall_time_iso, repo_root() / "records" / ".cell.lock")
         self.commands = {
             "health": self._cmd_health,
             "report_poses": self._cmd_report_poses,
@@ -117,6 +119,7 @@ class CellCommandServer:
             "timeline": self._cmd_timeline,
             "save_stage": self._cmd_save_stage,
             "list_commands": lambda p: {"ok": True, "commands": sorted(self.commands)},
+            **self.lab.commands(),
         }
 
     # -- lifecycle -----------------------------------------------------------------
@@ -209,6 +212,10 @@ class CellCommandServer:
                 self._sim_advancing = False
         except Exception:
             self._sim_advancing = None
+        try:
+            self.lab.sample()
+        except Exception:
+            pass
         for _ in range(8):
             try:
                 request, box, done = self._queue.get_nowait()

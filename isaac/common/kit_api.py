@@ -206,6 +206,40 @@ def is_kinematic(path: str) -> bool:
     return bool(attr and attr.Get())
 
 
+def set_kinematic(path: str, kinematic: bool) -> None:
+    """Switch a rigid body between kinematic and dynamic (physics:kinematicEnabled);
+    PhysX picks the change up while playing."""
+    prim = stage().GetPrimAtPath(path)
+    if not prim.IsValid():
+        raise ValueError(f"no prim {path}")
+    from pxr import Sdf
+
+    attr = prim.GetAttribute("physics:kinematicEnabled") or prim.CreateAttribute("physics:kinematicEnabled", Sdf.ValueTypeNames.Bool)
+    attr.Set(bool(kinematic))
+
+
+def lab_camera(path: str, eye: Sequence[float], target: Sequence[float], focal_length_mm: float = 18.0) -> str:
+    """Create or move a camera at `path` looking from eye at target (world, z up), authored in
+    the SESSION layer so it is never written into the stage file."""
+    from pxr import Gf, Usd, UsdGeom
+
+    st = stage()
+    with Usd.EditContext(st, st.GetSessionLayer()):
+        parent = path.rsplit("/", 1)[0]
+        if parent and not st.GetPrimAtPath(parent).IsValid():
+            UsdGeom.Xform.Define(st, parent)
+        cam = UsdGeom.Camera.Define(st, path)
+        cam.GetFocalLengthAttr().Set(float(focal_length_mm))
+        cam.GetClippingRangeAttr().Set(Gf.Vec2f(0.01, 100.0))
+        # USD cameras look down -Z with +Y up: build that frame from eye -> target
+        e, t = Gf.Vec3d(*eye), Gf.Vec3d(*target)
+        look = Gf.Matrix4d().SetLookAt(e, t, Gf.Vec3d(0, 0, 1))   # world -> camera
+        xf = UsdGeom.Xformable(cam.GetPrim())
+        xf.ClearXformOpOrder()
+        xf.AddTransformOp().Set(look.GetInverse())
+    return path
+
+
 # -- prims: teleport, velocities, joints (version-adapted) ---------------------
 
 

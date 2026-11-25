@@ -73,3 +73,15 @@ def test_save_frame_writes_png_and_npy(tmp_path, monkeypatch):
     assert (width, height) == (3, 2)
     assert Path(path[:-4] + ".npy").is_file()
     assert zlib  # png is zlib-compressed; decoding is the viewer's job
+
+
+def test_joint_path_is_smooth_and_speed_capped():
+    from geometry import joint_path
+
+    path = joint_path([0.0, 1.0], [0.5, 1.0], max_speed=0.5)
+    t_end, q_end, v_end = path[-1]
+    assert q_end == pytest.approx([0.5, 1.0]) and v_end == pytest.approx([0.0, 0.0], abs=1e-9)
+    assert t_end == pytest.approx(1.875 * 0.5 / 0.5)
+    assert max(abs(v[0]) for _, _, v in path) <= 0.5 + 1e-9
+    with pytest.raises(ValueError):
+        joint_path([0.0], [1.0], duration_s=0.5, max_speed=0.5)

@@ -467,7 +467,12 @@ def main(argv: list[str] | None = None) -> int:
         # A plan-free task must not see where parts go: no placement frame may
         # be visible on the executor's pose topic (camera1).
         task_doc = yaml.safe_load(task_path.read_text()) or {}
-        if not task_doc.get("steps"):
+        # Executor-baseline tasks (task_data/, the labmate's droidstack.task schema) carry the
+        # assembly graph's seats by design; only the M7 plan-free task hides where parts go.
+        baseline_task = str(task_doc.get("schema", "")).startswith("droidstack.task")
+        task_ref = str(task_doc["task_id"]) if baseline_task else str(task_path)
+        task_data_env = {"CELL_TASK_DATA": str(task_path.parents[2])} if baseline_task else {}
+        if not task_doc.get("steps") and not baseline_task:
             stage(verdict, "placement_leak_check")
             frames = [str(spec.get("placement_frame")) for spec in ((requirements.get("acceptance") or {}).get("parts") or {}).values() if spec]
             deadline = time.monotonic() + 3.0
@@ -483,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if not args.no_record:
             rec = EpisodeRecording(str(ep), platform, cell).start()
-        base_env = {**os.environ, "CELL_PLATFORM": args.platform, "CELL_REPO_ROOT": str(REPO),
+        base_env = {**os.environ, **task_data_env, "CELL_PLATFORM": args.platform, "CELL_REPO_ROOT": str(REPO),
                     "CELL_EPISODE_ID": episode_id, "CELL_EPISODE_DIR": str(ep)}
         base_env.pop("VIRTUAL_ENV", None)
         guard = rn.declare_episode(episode_id, "unguarded" if args.watchdog == "none" else "guarded")
@@ -492,7 +497,7 @@ def main(argv: list[str] | None = None) -> int:
         if not guard["ok"]:
             verdict.update(stage="guard_mode", reason=f"could not declare guard_mode {guard['mode']} to the orchestrator: {guard['detail']}")
             return 2
-        wd_proc = start_watchdog(args.watchdog, ep, base_env)
+        wd_proc = start_watchdog(args.watchdog, ep, {k: v for k, v in base_env.items() if k != "CELL_TASK_DATA"})
 
         # Start permission: the WatchDog prepares while nothing moves, then
         # signals ready; physics wakes it from then on. The planner is not
@@ -508,12 +513,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         stage(verdict, "planner")
-        log(f"execute_task({task_path.relative_to(REPO)}) with planner {planner_dir} "
+        log(f"execute_task({task_ref}) with planner {planner_dir} "
             f"(sim budget {sim_budget}s, wall guard {wall_guard}s)")
         planner_env = {k: v for k, v in base_env.items() if not k.startswith("WATCHDOG_")}
         pump = StderrPump(ep / "executor" / "planner.stderr.jsonl", "planner")
         try:
-            verdict["planner"] = asyncio.run(call_planner(planner_dir, str(task_path), planner_env, wall_guard,
+            verdict["planner"] = asyncio.run(call_planner(planner_dir, task_ref, planner_env, wall_guard,
                                                           sim_budget if has_sim_clock else None, rn, pump.file(),
                                                           honour_escalation=(wd_proc is not None and (cell.get("watchdog") or {}).get("mode") == "halt_enabled")))
         finally:

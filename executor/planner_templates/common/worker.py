@@ -39,7 +39,7 @@ def _wait(future: Any, timeout_s: float) -> Any:
 
 
 class Worker:
-    def __init__(self, platform_name: str, repo_root: str) -> None:
+    def __init__(self, platform_name: str, repo_root: str, node_name: str = "planner") -> None:
         import rclpy
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.executors import MultiThreadedExecutor
@@ -54,7 +54,7 @@ class Worker:
         with open(f"{repo_root}/config/cell.yaml", "r", encoding="utf-8") as handle:
             self.cell = yaml.safe_load(handle) or {}
         use_sim_time = bool(self.platform.get_optional("use_sim_time", default=False))
-        self.node = Node("planner", parameter_overrides=[Parameter("use_sim_time", value=use_sim_time)])
+        self.node = Node(node_name, parameter_overrides=[Parameter("use_sim_time", value=use_sim_time)])
         self.cb = ReentrantCallbackGroup()
         backend_pkg = {"sim": "cell_backend_sim", "hardware": "cell_backend_hw"}[self.platform.name]
         self.backends = importlib.import_module(backend_pkg).build_backends(self.node, self.platform, self.cb, self.cell)
@@ -352,6 +352,63 @@ class Worker:
             raise Halted(f"{label}: trajectory cancelled ({result.detail})")
         if result.state != "succeeded":
             raise StepFailed(f"{label}: motion {result.state} {result.detail}")
+
+    # -- direct motion (no planning, no collision checking) ------------------------
+
+    def move_joints(self, goal: dict[str, float], duration_s: float | None = None,
+                    max_speed: float | None = None, label: str = "move_joints") -> None:
+        """Drive the arm straight to joint positions (rad, by name; joints not named stay) along a
+        quintic, through the motion backend. Nothing checks collisions: keep moves small and known."""
+        from builtin_interfaces.msg import Duration
+        from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+        from geometry import DIRECT_MAX_JOINT_SPEED, joint_path
+
+        unknown = [j for j in goal if j not in self.arm_joints]
+        if unknown:
+            raise StepFailed(f"{label}: not arm joints: {unknown} (arm: {self.arm_joints})")
+        snap = self.backends.motion.joint_state(max_age_s=1.0)
+        if snap is None:
+            raise StepFailed(f"{label}: no fresh joint state")
+        start = [snap.position_of(j) for j in self.arm_joints]
+        if any(q is None for q in start):
+            raise StepFailed(f"{label}: joint state lacks some arm joints")
+        target = [float(goal.get(j, q)) for j, q in zip(self.arm_joints, start)]
+        try:
+            path = joint_path(start, target, duration_s, max_speed or DIRECT_MAX_JOINT_SPEED)
+        except ValueError as exc:
+            raise StepFailed(f"{label}: {exc}") from exc
+        traj = JointTrajectory()
+        traj.joint_names = list(self.arm_joints)
+        for t, q, v in path:
+            pt = JointTrajectoryPoint()
+            pt.positions, pt.velocities = q, v
+            pt.time_from_start = Duration(sec=int(t), nanosec=int((t - int(t)) * 1e9))
+            traj.points.append(pt)
+        self.execute(traj, label)
+
+    def jog(self, delta: dict[str, Any], frame: str = "tool", vel: float = 0.05, acc: float = 0.05,
+            label: str = "jog") -> None:
+        """Move the TCP by delta ({position: {x,y,z}, orientation: {x,y,z,w}}; missing = zero/identity)
+        along a straight line, in the TCP's own axes (frame="tool") or world axes (frame="world").
+        Cartesian interpolation only: no collision checking."""
+        from geometry import compose, spec_pose
+
+        tcp = self.tcp_pose()
+        d = spec_pose(delta)
+        if frame == "tool":
+            target = compose(tcp, d)
+        elif frame == "world":
+            a, b = d["orientation"], tcp["orientation"]          # world rotation applied about the TCP
+            q = {"x": a["w"] * b["x"] + a["x"] * b["w"] + a["y"] * b["z"] - a["z"] * b["y"],
+                 "y": a["w"] * b["y"] - a["x"] * b["z"] + a["y"] * b["w"] + a["z"] * b["x"],
+                 "z": a["w"] * b["z"] + a["x"] * b["y"] - a["y"] * b["x"] + a["z"] * b["w"],
+                 "w": a["w"] * b["w"] - a["x"] * b["x"] - a["y"] * b["y"] - a["z"] * b["z"]}
+            target = {"position": {k: tcp["position"][k] + d["position"][k] for k in "xyz"}, "orientation": q,
+                      "frame_id": tcp.get("frame_id", self.world)}
+        else:
+            raise StepFailed(f"{label}: frame must be 'tool' or 'world', not {frame!r}")
+        self.execute(self.plan_straight(target, vel, acc), label)
 
     # -- gripper ---------------------------------------------------------------------
 

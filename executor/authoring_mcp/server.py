@@ -46,6 +46,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 REPO = Path(os.environ.get("CELL_REPO_ROOT") or HERE.parents[1])
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))  # executor/planner_lint.py
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "ros2_ws" / "src" / "cell_platform_interfaces"))  # pure modules only (assembly_views)
 
@@ -80,15 +81,7 @@ MAX_EPISODES_PER_CALL = 3
 IMAGES_PER_EPISODE_EVAL = 2
 IMAGES_PER_EPISODE_READ = 6
 
-# A planner reaches the cell only through the contract's channels. Text that
-# would reach around them (the simulator's command server and stage file, the
-# WatchDog's camera2 and part data, the measured placements, the requirements,
-# the registry) makes evaluate_planner refuse the snapshot before any episode.
-FORBIDDEN_IN_PLANNER = (
-    "cell_command_server", "CommandServerClient", "report_poses", "contacts_poll", "9010",
-    "backends.scene", "watchdog_poses", "camera2", "assembly_room", ".usd", "pxr",
-    "config/placements", "placements.yaml", "watchdog_parts", "config/requirements", "model_registry",
-)
+from planner_lint import FORBIDDEN_IN_PLANNER  # noqa: E402,F401  (executor/planner_lint.py)
 CONDITIONS = ("plan_given", "plan_free")
 
 HOW_TO = {
@@ -208,31 +201,11 @@ def get_assembly_views():
     return [json.dumps(text, indent=2)] + [Image(data=v.data, format=v.format) for v in views]
 
 
-def _template_lines() -> set[str]:
-    """Every line of the shipped templates: the lint judges only what the agent wrote."""
-    lines: set[str] = set()
-    for path in (REPO / "executor" / "planner_templates").rglob("*"):
-        if path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts:
-            lines.update(l.strip() for l in path.read_text(errors="replace").splitlines())
-    return lines
-
-
 def lint_planner(folder: Path) -> list[str]:
-    """Forbidden references the agent added to the planner: ["<file>:<line>: ..."]."""
-    shipped = _template_lines()
-    hits = []
-    for path in sorted(folder.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts:
-            continue
-        if path.suffix not in (".py", ".sh", ".yaml", ".yml", ".json", ".txt", ".cfg", ".toml"):
-            continue
-        for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
-            if line.strip() in shipped:
-                continue
-            for word in FORBIDDEN_IN_PLANNER:
-                if word in line:
-                    hits.append(f"{path.relative_to(folder)}:{n}: {word!r} in {line.strip()[:120]}")
-    return hits
+    """Forbidden references the agent added to the planner (executor/planner_lint.py)."""
+    import planner_lint
+
+    return planner_lint.lint_planner(folder, REPO / "executor" / "planner_templates")
 
 
 def _episode_images(episode_id: str, limit: int) -> list[Any]:

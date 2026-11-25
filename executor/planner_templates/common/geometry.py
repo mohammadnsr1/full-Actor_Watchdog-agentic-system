@@ -8,6 +8,7 @@ name; it is the arm/gripper convention any planner on this cell uses:
     along_own_z  pose (x) [0, 0, d]: move d along the pose's own Z
     tcp_for      the RG2 TCP pose that puts the fingers' grasp centre at
                  `center` with the jaws `width_m` apart (robot_backend.utils.rg2_geometry)
+    joint_path   a smooth (quintic) joint-space path for direct motion, no planning
     guarded grasp: close to (expected width - GRASP_CLEARANCE_M) under the
                  part's force_threshold_n from config/parts/executor_parts.yaml;
                  a final width at or below GRASP_MIN_PLAUSIBLE_WIDTH_M means
@@ -77,3 +78,28 @@ def guarded_target_width(expected_width_m: float) -> float:
 def grasp_force(parts: dict[str, Any], object_id: str) -> float:
     entry = (parts.get(object_id) or {}).get("grasp") or {}
     return float(entry.get("force_threshold_n", DEFAULT_FORCE_THRESHOLD))
+
+
+DIRECT_MAX_JOINT_SPEED = 0.5      # rad/s: default cap for direct joint moves (no collision checking)
+
+
+def joint_path(start: list[float], goal: list[float], duration_s: float | None = None,
+               max_speed: float = DIRECT_MAX_JOINT_SPEED, rate_hz: float = 50.0) -> list[tuple[float, list[float], list[float]]]:
+    """[(t, positions, velocities)] from start to goal along a quintic (zero velocity and
+    acceleration at both ends). Without a duration, the slowest one that keeps every joint
+    under max_speed (a quintic peaks at 1.875 x the mean speed)."""
+    if len(start) != len(goal):
+        raise ValueError("start and goal need the same joints")
+    span = max((abs(g - s0) for s0, g in zip(start, goal)), default=0.0)
+    need = 1.875 * span / max_speed if max_speed > 0 else 0.0
+    T = max(float(duration_s or 0.0), need, 0.1)
+    if duration_s is not None and duration_s < need:
+        raise ValueError(f"duration {duration_s:.2f}s would exceed {max_speed} rad/s; at least {need:.2f}s")
+    n = max(2, int(round(T * rate_hz)))
+    out = []
+    for i in range(1, n + 1):
+        t = T * i / n
+        u = t / T
+        s_, ds = 10 * u**3 - 15 * u**4 + 6 * u**5, (30 * u**2 - 60 * u**3 + 30 * u**4) / T
+        out.append((t, [a + (b - a) * s_ for a, b in zip(start, goal)], [(b - a) * ds for a, b in zip(start, goal)]))
+    return out

@@ -42,6 +42,7 @@ topics:
   watchdog_notices: /cell/watchdog_notices
   executor_facts: /cell/executor_facts
   pad_contacts: ""                # not available on hardware
+  lab_events: ""                  # the lab is simulation only
   gripper_width_true: ""          # not available on hardware
   # UR driver URScript injection topic (std_msgs/String), used by the RG6
   # URCap transport. Driver default shown; TODO(mohammad): confirm.

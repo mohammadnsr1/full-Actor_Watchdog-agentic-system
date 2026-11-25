@@ -1,0 +1,9 @@
+# Delivery manifest (EB6), checked by the platform MCP's check_delivery before any episode.
+schema: cell.planner-delivery/1
+entrypoint: run.sh            # starts a stdio MCP server; relative to this directory
+tools:                        # exactly these tools, with these input schemas
+  - name: execute_task
+    input: {task_ref: string}
+budget:
+  sim_s: 300                  # the sim-time budget of one execute_task call; capped by config/cell.yaml
+admissible_states: [done, stopped]
